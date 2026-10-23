@@ -29,6 +29,7 @@ import { log } from './logger'
 import { useIframeErrors, type IframeError } from './iframeProbe'
 import { describeLimits, renderLimits } from './limits'
 import { detectUnsupported, renderUnsupported } from './unsupported'
+import { detectRefuse, renderRefuse } from './refuse'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
@@ -175,6 +176,25 @@ export default function App() {
       return
     }
 
+    // ── 页面之外 / 功能之外的请求：明确拒绝，不糊弄 ────────────
+    //
+    // 用户原话："如果是页面之外的东西，还有他功能之外的东西，强调让他拒绝"。
+    //
+    // 之前"帮我做后端"会被做成一个"后台管理界面示意版" —— 那看着像后端，
+    // 其实不是，等于糊弄人。用户明确否掉了这个做法。
+    //
+    // 走本地规则而不是让模型判断：产品边界不能靠自觉。命中就必然拒绝。
+    const refuseKind = detectRefuse(enriched)
+    if (refuseKind) {
+      log.info('refuse', `拒绝页面之外的请求：${refuseKind}`, { text: enriched.slice(0, 120) })
+      setMessages((p) => [
+        ...p,
+        { id: uid(), role: 'assistant', content: renderRefuse(refuseKind), steps: doneSteps(['route']) },
+      ])
+      setBusy(false)
+      return
+    }
+
     // ── 我们做不到的事：引导用户自己完成，绝不胡编乱造 ──────────
     //
     // 用户说"把作品换成真实作品""用我的照片" —— 这个应用没有上传入口，
@@ -215,6 +235,17 @@ export default function App() {
       if (r.intent === 'chat') {
         patchMsg(botId, {
           content: r.reply || '你好！描述一个你想要的应用，我来帮你做出来。',
+          steps: doneSteps(['route']),
+        })
+        setBusy(false)
+        return
+      }
+
+      // 第二道保险：模型也判成 refuse（本地关键词没命中，但模型听懂了）
+      if (r.intent === 'refuse') {
+        log.info('refuse', '路由判定 refuse', { text: enriched.slice(0, 120) })
+        patchMsg(botId, {
+          content: renderRefuse('backend'),
           steps: doneSteps(['route']),
         })
         setBusy(false)
@@ -488,8 +519,12 @@ export default function App() {
           onSend={handleSend}
           onStop={stop}
         />
-        {view === 'preview' ? (
-          <div className="preview-wrap">
+        {/* 两个视图都常驻挂载，只用 hidden 切换显隐。
+            之前是 {view === 'preview' ? <PreviewPane/> : <CodePane/>}，
+            一切换就卸载 iframe —— 切回预览时 iframe 重建、页面重新加载，
+            用户看到的就是白屏闪一下。常驻就不会。 */}
+        <div className="stage-area">
+          <div className="preview-wrap" hidden={view !== 'preview'}>
             {/* iframe 里跑挂了要看得见 —— 否则用户只看到"点了没反应" */}
             {frameErrors.length > 0 && (
               <div className="frame-errors">
@@ -524,9 +559,11 @@ export default function App() {
             )}
             <PreviewPane code={current?.code ?? ''} reloadKey={reloadKey} />
           </div>
-        ) : (
-          <CodePane code={current?.code ?? ''} />
-        )}
+
+          <div className="code-wrap" hidden={view !== 'code'}>
+            <CodePane code={current?.code ?? ''} />
+          </div>
+        </div>
       </div>
 
       {showSettings && (

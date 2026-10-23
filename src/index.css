@@ -92,6 +92,26 @@ textarea { font-family: inherit; }
   min-height: 0;
 }
 
+/* 预览 / 代码 两个视图的容器。
+   两个视图都常驻挂载，用 hidden 切换显隐 —— 切换时 iframe 不卸载，
+   就不会出现"切回预览白屏闪一下"。 */
+.stage-area {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr;
+  background: #0e1219;
+}
+
+/* hidden 必须能压过 flex/grid 的默认 display，否则两个视图会同时显示 */
+[hidden] {
+  display: none !important;
+}
+
+.code-wrap {
+  min-height: 0;
+  overflow: auto;
+}
+
 /* ---------- 左：对话区 ---------- */
 .chat {
   display: grid;
