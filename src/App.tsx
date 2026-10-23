@@ -43,11 +43,90 @@ const ROLLBACK_WORDS = ['改回去', '回退', '撤销', '还原', '回到上一
 
 const isRollback = (t: string) => ROLLBACK_WORDS.some((w) => t.includes(w))
 
+/** 中文数字 → 阿拉伯数字，用来解析"第二版" */
+const CN_NUM: Record<string, number> = {
+  一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5,
+  六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+}
+
+/**
+ * 用户明确指代某一个版本时，直接在版本历史里切过去。
+ *
+ * 为什么必须本地做：模型看不到版本历史，"第二版"对它来说是空气 ——
+ * 它会猜、会问"你说的是哪个页面"、甚至把"版"理解成"页面数量"。
+ * 用户实测踩过这个坑："改成第二版" → 它回"我目前没有第二版的具体信息"。
+ *
+ * 系统里明明存着每一版，直接切过去就行，不用问模型。
+ */
+function resolveVersionRef(text: string, total: number, currentIdx: number): number | null {
+  if (total <= 1) return null
+
+  // "改成第二版" / "改回第2版" / "回到第 2 版" / "换成第2版那个"
+  const m = /第\s*([0-9０-９一二两三十]+)\s*版/.exec(text)
+  if (m) {
+    const raw = m[1]
+    const n = /^[0-9０-９]+$/.test(raw) ? parseInt(raw, 10) : CN_NUM[raw]
+    if (n && n >= 1 && n <= total) return n - 1
+    return null
+  }
+
+  // 回退之后说"改过来吧" = 回到刚才离开的那一版
+  if (/(改过来|还是改过来|改回来|回到刚才|刚才那版|刚才那个|刚才的)/.test(text)) {
+    if (currentIdx + 1 < total) return currentIdx + 1
+  }
+
+  // "上一版 / 前一版"
+  if (/(上一版|前一版|上一个版本)/.test(text) && currentIdx > 0) return currentIdx - 1
+
+  // "下一版 / 后一版"
+  if (/(下一版|后一版|后面那版|后面那一版)/.test(text) && currentIdx + 1 < total) {
+    return currentIdx + 1
+  }
+
+  return null
+}
+
+/** 把版本历史摘要出来给路由看 —— 模型至少要知道"有几版、每版是啥" */
+function buildVersionSummary(versions: AppVersion[], currentIdx: number): string {
+  if (versions.length <= 1) return ''
+  const lines = [`版本历史（共 ${versions.length} 版，当前停在第 ${currentIdx + 1} 版）：`]
+  versions.forEach((v, i) => {
+    const desc = (v.plan || v.prompt || '').split('\n')[0].replace(/^-\s*/, '').slice(0, 60)
+    lines.push(`- 第 ${i + 1} 版：${desc}${i === currentIdx ? '  ← 当前' : ''}`)
+  })
+  lines.push('用户说"改成第 N 版""改回第二版"这类话，指的就是上面某一版。')
+  return lines.join('\n')
+}
+
 const mkSteps = (): Step[] => STEP_LABELS.map((s) => ({ ...s, status: 'pending' }))
 const doneSteps = (ids: string[]): Step[] =>
   STEP_LABELS.filter((s) => ids.includes(s.id)).map((s) => ({ ...s, status: 'done' }))
 
 const isAbort = (e: any) => e?.name === 'AbortError'
+
+/**
+ * 用户说"就按你默认的来"这类话。
+ * 注意：这是【放弃回答】，不是【已回答】。原来的 fromOption 把它当成已作答，
+ * 直接跳过后续所有澄清 —— 结果个人介绍页连"你是谁"都没问过就生成了，
+ * 满页只能是占位文字。
+ */
+const SKIP_CLARIFY_WORDS = [
+  '就按你默认的来',
+  '你定就行',
+  '按默认',
+  '你决定',
+  '随便',
+  '都可以',
+  '你看着办',
+  '你来定',
+]
+
+/** 用户明确接受"用占位先做" —— 给过一次跳过权就不再问 */
+const ACCEPT_PLACEHOLDER_WORDS = ['先用占位做', '占位先做', '后面自己改']
+
+/** 澄清历史里是否已经问过「这是谁的页面」 */
+const askedIdentity = (history: { q: string; a: string }[]) =>
+  history.some((h) => /(名字|姓名|你是谁|是谁|身份|职业|介绍自己|贵姓)/.test(h.q))
 
 /**
  * plan 里出现问号 = 模型在向用户反问。
@@ -94,6 +173,8 @@ export default function App() {
   const frameErrors = useIframeErrors(reloadKey)
   /** 报错条默认折叠，别把预览区顶部压掉 */
   const [errOpen, setErrOpen] = useState(false)
+  /** 是否已经问过「这是谁的页面」。问过一次就给过跳过权，不再追问 */
+  const identityAskedRef = useRef(false)
 
   // 生成时每秒 +1，让人看到「在跑」而不是「卡住」
   useEffect(() => {
@@ -166,6 +247,28 @@ export default function App() {
       return
     }
 
+    // 「改成第二版 / 改回第2版 / 改过来吧」—— 明确指代某一版，
+    // 直接在版本历史里切过去。让模型干这事它只会猜（实测踩过坑）。
+    const versionTarget = resolveVersionRef(text, versions.length, currentIdx)
+    if (versionTarget !== null && versionTarget !== currentIdx) {
+      setCurrentIdx(versionTarget)
+      setReloadKey((k) => k + 1)
+      log.info('version-switch', `切到第 ${versionTarget + 1} 版（共 ${versions.length} 版）`, {
+        from: currentIdx + 1,
+        to: versionTarget + 1,
+      })
+      setMessages((p) => [
+        ...p,
+        {
+          id: uid(),
+          role: 'assistant',
+          content: `已切到第 ${versionTarget + 1} 版（共 ${versions.length} 版）。这是版本历史里直接切过去的，没有重新生成。`,
+        },
+      ])
+      setBusy(false)
+      return
+    }
+
     if (!cfg.apiKey) {
       setShowSettings(true)
       setMessages((p) => [
@@ -218,6 +321,45 @@ export default function App() {
       return
     }
 
+    // ── 最后一问：这是谁的页面 ──────────────────────────────
+    //
+    // 用户说"就按你默认的来"时会放行，但个人介绍页 / 简历这类以用户为中心的页面，
+    // 不知道用户是谁就只能满页占位文字 —— 那这页做了也白做。
+    //
+    // 原来的 bug：fromOption 把"就按你默认的来"当成"用户已作答"，
+    // 直接跳过后续所有澄清，连问都没问过就生成。
+    //
+    // 这里补一道：放行前必须把身份问到手，但只问一次，且给明确的跳过权。
+    if (
+      !current &&
+      SKIP_CLARIFY_WORDS.some((w) => text.includes(w)) &&
+      !ACCEPT_PLACEHOLDER_WORDS.some((w) => text.includes(w)) &&
+      !identityAskedRef.current &&
+      !askedIdentity(clarifyHistory)
+    ) {
+      identityAskedRef.current = true
+      const opts = ['先用占位做，我后面自己改', '我告诉你我的名字和职业']
+      lastOptionsRef.current = opts
+      // 保留原始需求：用户点"先用占位做"后，模型还得知道要做的是什么页面
+      pendingRef.current = original || text
+      log.info('clarify', '放行前追问身份信息', { text: enriched.slice(0, 120) })
+      setMessages((p) => [
+        ...p,
+        {
+          id: uid(),
+          role: 'assistant',
+          content:
+            '生成之前还差一个关键信息：这是谁的页面？\n\n' +
+            '告诉我你的名字和职业（一句话就行），我直接做进去。\n' +
+            '或者选「先用占位做，我后面自己改」—— 那这页的身份信息就全是占位文字，你后面自己替换。',
+          steps: doneSteps(['route']),
+          options: opts,
+        },
+      ])
+      setBusy(false)
+      return
+    }
+
     const botId = uid()
     setMessages((p) => [...p, { id: botId, role: 'assistant', content: '', steps: mkSteps() }])
 
@@ -225,7 +367,17 @@ export default function App() {
       // ---- Step 1: 判意图 ----
       setStep(botId, 'route', 'running')
       const t1 = Date.now()
-      const raw = await chat(cfg, buildRouterMessages(enriched, !!current, clarifyHistory), 0.2, signal)
+      const raw = await chat(
+        cfg,
+        buildRouterMessages(
+          enriched,
+          !!current,
+          clarifyHistory,
+          buildVersionSummary(versions, currentIdx)
+        ),
+        0.2,
+        signal
+      )
       log.info('route', `意图判断完成 ${Date.now() - t1}ms`, { raw: raw.slice(0, 400) })
       const r = parseRouter(raw)
       log.info('route', `判定结果 intent=${r.intent}`)
@@ -489,7 +641,7 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <div className="brand">
-          Atoms<span>·</span>Demo
+          LIU XU<span>’</span>s Atoms Demo
         </div>
         <div className="spacer" />
         <div className="segmented">
