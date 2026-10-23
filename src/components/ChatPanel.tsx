@@ -14,6 +14,9 @@ export default function ChatPanel({ messages, busy, elapsed, onSend, onStop }: P
   const [text, setText] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
 
+  // 只有最后一条助手消息的选项能点 —— 否则旧选项会一直挂着，用户点错轮次
+  const lastAssistantIdx = messages.reduce((acc, m, i) => (m.role === 'assistant' ? i : acc), -1)
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
@@ -34,7 +37,7 @@ export default function ChatPanel({ messages, busy, elapsed, onSend, onStop }: P
   return (
     <div className="chat">
       <div className="msgs">
-        {messages.map((m) => (
+        {messages.map((m, i) => (
           <div key={m.id}>
             <div className={`bubble ${m.role}`}>{m.content}</div>
 
@@ -50,7 +53,7 @@ export default function ChatPanel({ messages, busy, elapsed, onSend, onStop }: P
             )}
 
             {/* Human-in-the-loop：选项直接可点，不用手打 */}
-            {m.options && m.options.length > 0 && !busy && (
+            {m.options && m.options.length > 0 && !busy && i === lastAssistantIdx && (
               <div className="options">
                 {m.options.map((o) => (
                   <button key={o} className="opt" onClick={() => pick(o)}>

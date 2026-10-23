@@ -6,8 +6,14 @@ import Settings from './components/Settings'
 import LogPanel from './components/LogPanel'
 import type { AppVersion, Message, Step } from './types'
 import { loadConfig, saveConfig, type LLMConfig } from './config'
-import { chat } from './llm'
-import { SYSTEM_ROUTER, parseRouter, buildCodeMessages, extractHtml } from './prompts'
+import { chat, chatStream } from './llm'
+import {
+  SYSTEM_ROUTER,
+  parseRouter,
+  buildRouterMessages,
+  buildCodeMessages,
+  extractHtml,
+} from './prompts'
 import { log } from './logger'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -104,15 +110,7 @@ export default function App() {
       // ---- Step 1: 判意图 ----
       setStep(botId, 'route', 'running')
       const t1 = Date.now()
-      const raw = await chat(
-        cfg,
-        [
-          { role: 'system', content: SYSTEM_ROUTER },
-          { role: 'user', content: enriched },
-        ],
-        0.2,
-        signal
-      )
+      const raw = await chat(cfg, buildRouterMessages(enriched, !!current), 0.2, signal)
       log.info('route', `意图判断完成 ${Date.now() - t1}ms`, { raw: raw.slice(0, 400) })
       const r = parseRouter(raw)
       log.info('route', `判定结果 intent=${r.intent}`)
@@ -128,8 +126,9 @@ export default function App() {
         return
       }
 
-      // 需求模糊：先问清楚，把选项摆给用户点，不急着生成
-      if (r.intent === 'clarify' && !original) {
+      // 需求模糊：先问清楚，把选项摆给用户点，不急着生成。
+      // 只在「首次生成」时问 —— 已经有版本了还追问就是在烦人
+      if (r.intent === 'clarify' && !original && !current) {
         pendingRef.current = text
         patchMsg(botId, {
           content: r.reply || '我还不太确定你想要什么，先确认一下：',
@@ -149,10 +148,20 @@ export default function App() {
       // ---- Step 3: 生成代码 ----
       setStep(botId, 'code', 'running')
       const t2 = Date.now()
-      const rawCode = await chat(
+      // 用流式：长连接一直有数据流动，不容易被网关掐断返回 500；
+      // 顺带能实时显示进度，用户知道在跑
+      let lastPaint = 0
+      const rawCode = await chatStream(
         cfg,
         buildCodeMessages(enriched, plan, current?.code ?? null),
-        0.7,
+        (_chunk, full) => {
+          const now = Date.now()
+          if (now - lastPaint > 400) {
+            lastPaint = now
+            patchMsg(botId, { content: `${plan}\n\n正在生成代码… ${full.length} 字符` })
+          }
+        },
+        0.4, // temperature 压低：代码要稳，别发挥
         signal
       )
       const code = extractHtml(rawCode)

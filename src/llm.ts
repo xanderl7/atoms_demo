@@ -1,4 +1,5 @@
 import type { LLMConfig } from './config'
+import { log } from './logger'
 
 export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -13,10 +14,21 @@ const headersOf = (cfg: LLMConfig) => ({
  * 统一发请求。若模型不支持关闭思考（glm-5.x 会报 1210），
  * 自动去掉 thinking 参数重试一次 —— 换模型不用改代码。
  */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * 服务端 5xx / 429 自动重试。
+ * 根因：生成一次要 45-90 秒，长连接很容易被网关掐断返回 500。
+ * 5xx 重试经常就成功，4xx（参数错）不重试。
+ */
+const RETRY_TIMES = 2
+const RETRY_DELAYS = [1500, 3000]
+
 async function call(
   cfg: LLMConfig,
   payload: Record<string, unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  label = 'llm'
 ): Promise<Response> {
   const send = async (p: Record<string, unknown>) => {
     try {
@@ -35,16 +47,27 @@ async function call(
     }
   }
 
-  let res = await send(payload)
-  if (!res.ok) {
+  for (let i = 0; i <= RETRY_TIMES; i++) {
+    const res = await send(payload)
+    if (res.ok) return res
+
     const text = await res.text()
+
+    // 模型不支持关思考（glm-5.x 报 1210）：去掉参数重试
     if (payload.thinking && /1210|不支持关闭思考/.test(text)) {
       const { thinking, ...rest } = payload
       return send(rest)
     }
+
+    const retryable = res.status >= 500 || res.status === 429
+    if (retryable && i < RETRY_TIMES) {
+      log.warn(label, `服务端 ${res.status}，${RETRY_DELAYS[i] / 1000}s 后重试（第 ${i + 1} 次）`, text.slice(0, 150))
+      await sleep(RETRY_DELAYS[i])
+      continue
+    }
     throw new Error(`LLM ${res.status}: ${text.slice(0, 300)}`)
   }
-  return res
+  throw new Error('LLM 请求失败（重试耗尽）')
 }
 
 const basePayload = (cfg: LLMConfig, messages: ChatMsg[], temperature: number, stream: boolean) => ({
@@ -62,7 +85,7 @@ export async function chat(
   temperature = 0.7,
   signal?: AbortSignal
 ): Promise<string> {
-  const res = await call(cfg, basePayload(cfg, messages, temperature, false), signal)
+  const res = await call(cfg, basePayload(cfg, messages, temperature, false), signal, 'chat')
   const json = await res.json()
   return json.choices?.[0]?.message?.content ?? ''
 }
@@ -78,7 +101,7 @@ export async function chatStream(
   temperature = 0.7,
   signal?: AbortSignal
 ): Promise<string> {
-  const res = await call(cfg, basePayload(cfg, messages, temperature, true), signal)
+  const res = await call(cfg, basePayload(cfg, messages, temperature, true), signal, 'codegen')
 
   const reader = res.body!.getReader()
   const decoder = new TextDecoder()

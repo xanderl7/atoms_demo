@@ -26,6 +26,20 @@ export const SYSTEM_ROUTER = `你是需求澄清助手。判断用户这句话�
 options 给 3 个具体可选项，不要写"随便""都行"这种。
 plan 为 3-5 条可实现要点，每条一行、以 "- " 开头，只描述这个应用要有什么，不要写"测试""验证"这类人类任务。`
 
+/**
+ * 组装路由消息。已经有版本时，明确告诉模型「这是修改请求」——
+ * 否则它会把「改成绿色」理解成一句提问，plan 里反问用户。
+ */
+export function buildRouterMessages(text: string, hasVersion: boolean) {
+  const suffix = hasVersion
+    ? `\n\n注意：用户已经有一个生成好的页面，这条消息是对它的修改请求。除非明显是闲聊，一律判为 build；plan 直接写「要改成什么」，不要反问用户、不要问"你想改哪个"。`
+    : ''
+  return [
+    { role: 'system', content: SYSTEM_ROUTER + suffix },
+    { role: 'user', content: text },
+  ]
+}
+
 export interface RouterResult {
   intent: 'chat' | 'clarify' | 'build'
   reply: string
@@ -58,6 +72,14 @@ export function parseRouter(raw: string): RouterResult {
  * 第二步：生成代码。这是质量的关键。
  */
 export const SYSTEM_CODEGEN = `你是资深前端工程师兼设计师。用户给你需求，你产出一个可直接运行、视觉精美的单文件网页。
+
+# 交付自检（最重要，逐条打勾后再输出，缺一条都不算完成）
+☑ 至少 3 个 <section>，每个有小标题和说明文字
+☑ 至少 6 处 hover: 状态 —— 按钮、卡片、链接都要有，这是"精美"的最低要求
+☑ 至少 5 处响应式断点（sm: / md: / lg:），窄屏不能挤成一团
+☑ 总长控制在 500 行以内 —— 精简但完整，禁止为了凑功能无限堆代码（代码越长生成越慢、越容易被中断）
+☑ 每一个按钮、输入框、表单都在 <script> 里绑定了事件，不存在点了没反应的元素
+☑ 没有 TODO、占位符、lorem ipsum、"示例文本"
 
 # 输出格式
 只输出一个 \`\`\`html 代码块。围栏外禁止出现任何文字。
