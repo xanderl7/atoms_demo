@@ -14,8 +14,20 @@ const headersOf = (cfg: LLMConfig) => ({
  * 自动去掉 thinking 参数重试一次 —— 换模型不用改代码。
  */
 async function call(cfg: LLMConfig, payload: Record<string, unknown>): Promise<Response> {
-  const send = (p: Record<string, unknown>) =>
-    fetch(urlOf(cfg), { method: 'POST', headers: headersOf(cfg), body: JSON.stringify(p) })
+  const send = async (p: Record<string, unknown>) => {
+    try {
+      return await fetch(urlOf(cfg), {
+        method: 'POST',
+        headers: headersOf(cfg),
+        body: JSON.stringify(p),
+      })
+    } catch {
+      // fetch 本身抛错 = 请求根本没发出去：跨域被拦 / 代理没起 / 断网
+      throw new Error(
+        '请求发不出去。检查：① baseURL 是否为 /zhipu ② npm run dev 是否在运行 ③ 网络'
+      )
+    }
+  }
 
   let res = await send(payload)
   if (!res.ok) {

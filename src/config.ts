@@ -26,7 +26,17 @@ export const DEFAULT_CONFIG: LLMConfig = {
 export function loadConfig(): LLMConfig {
   try {
     const raw = localStorage.getItem(KEY)
-    return raw ? { ...DEFAULT_CONFIG, ...JSON.parse(raw) } : { ...DEFAULT_CONFIG }
+    const c: LLMConfig = raw
+      ? { ...DEFAULT_CONFIG, ...JSON.parse(raw) }
+      : { ...DEFAULT_CONFIG }
+
+    // 历史遗留修复：早期默认填的是直连地址，浏览器会被跨域拦（Failed to fetch）。
+    // 只要是智谱域名就悄悄改回走本地代理。
+    if (/^https?:\/\//.test(c.baseURL) && c.baseURL.includes('bigmodel.cn')) {
+      c.baseURL = DEFAULT_CONFIG.baseURL
+      saveConfig(c)
+    }
+    return c
   } catch {
     return { ...DEFAULT_CONFIG }
   }

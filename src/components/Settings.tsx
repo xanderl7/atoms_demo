@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { LLMConfig } from '../config'
 import { DEFAULT_CONFIG } from '../config'
+import { chat } from '../llm'
 
 interface Props {
   value: LLMConfig
@@ -10,6 +11,18 @@ interface Props {
 
 export default function Settings({ value, onSave, onClose }: Props) {
   const [c, setC] = useState<LLMConfig>(value)
+  const [test, setTest] = useState('')
+
+  async function testConn() {
+    setTest('测试中…')
+    try {
+      const t0 = Date.now()
+      const r = await chat(c, [{ role: 'user', content: '只回复两个字：连通' }], 0.3)
+      setTest(`✅ 连通（${((Date.now() - t0) / 1000).toFixed(1)}s）：${r.slice(0, 20)}`)
+    } catch (e: any) {
+      setTest(`❌ ${e.message}`)
+    }
+  }
 
   return (
     <div className="mask" onClick={onClose}>
@@ -45,7 +58,12 @@ export default function Settings({ value, onSave, onClose }: Props) {
           </select>
         </label>
 
+        {test && <p className="test-result">{test}</p>}
+
         <div className="modal-actions">
+          <button className="icon-btn" onClick={testConn}>
+            测试连接
+          </button>
           <button className="icon-btn" onClick={() => setC(DEFAULT_CONFIG)}>
             重置
           </button>
