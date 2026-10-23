@@ -1,0 +1,202 @@
+:root {
+  --bg: #0b0e14;
+  --panel: #12161f;
+  --panel-2: #171c27;
+  --border: #232a38;
+  --text: #e6e9ef;
+  --muted: #8b93a7;
+  --accent: #6366f1;
+  --accent-soft: #6366f133;
+  --ok: #34d399;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; }
+textarea { font-family: inherit; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #2b3344; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 布局 ---------- */
+.app {
+  display: grid;
+  grid-template-rows: 48px 1fr;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: .2px;
+}
+.brand span { color: var(--accent); }
+
+.spacer { flex: 1; }
+
+.segmented {
+  display: flex;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.segmented button.on {
+  background: var(--accent-soft);
+  color: #c7d2fe;
+}
+
+.icon-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.icon-btn:hover { color: var(--text); }
+
+.main {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  min-height: 0;
+}
+
+/* ---------- 左：对话区 ---------- */
+.chat {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  min-height: 0;
+}
+
+.msgs {
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bubble {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bubble.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.bubble.assistant {
+  align-self: flex-start;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.steps { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.step {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--muted);
+}
+.step .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: #3b4356;
+}
+.step.running .dot { background: var(--accent); animation: pulse 1s infinite; }
+.step.done { color: var(--text); }
+.step.done .dot { background: var(--ok); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.composer textarea {
+  flex: 1;
+  resize: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  max-height: 140px;
+  outline: none;
+}
+.composer textarea:focus { border-color: var(--accent); }
+.send {
+  background: var(--accent);
+  border: 0;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.send:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ---------- 右：预览 / 代码 ---------- */
+.stage { display: grid; grid-template-rows: 1fr; min-height: 0; background: #0e1219; }
+.stage iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+
+.code {
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #d5dae6;
+}
+.code .ln { color: #4b556b; user-select: none; display: inline-block; width: 44px; text-align: right; margin-right: 16px; }
+
+.empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 24px;
+}
