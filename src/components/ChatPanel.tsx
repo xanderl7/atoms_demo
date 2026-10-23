@@ -7,20 +7,27 @@ interface Props {
   /** 已等待秒数，生成时实时显示，避免看起来像卡死 */
   elapsed: number
   onSend: (text: string) => void
+  onStop: () => void
 }
 
-export default function ChatPanel({ messages, busy, elapsed, onSend }: Props) {
+export default function ChatPanel({ messages, busy, elapsed, onSend, onStop }: Props) {
   const [text, setText] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, busy])
 
   const submit = () => {
     const v = text.trim()
     if (!v || busy) return
     onSend(v)
+    setText('')
+  }
+
+  const pick = (opt: string) => {
+    if (busy) return
+    onSend(opt)
     setText('')
   }
 
@@ -30,6 +37,7 @@ export default function ChatPanel({ messages, busy, elapsed, onSend }: Props) {
         {messages.map((m) => (
           <div key={m.id}>
             <div className={`bubble ${m.role}`}>{m.content}</div>
+
             {m.steps && (
               <div className="steps">
                 {m.steps.map((s) => (
@@ -40,8 +48,20 @@ export default function ChatPanel({ messages, busy, elapsed, onSend }: Props) {
                 ))}
               </div>
             )}
+
+            {/* Human-in-the-loop：选项直接可点，不用手打 */}
+            {m.options && m.options.length > 0 && !busy && (
+              <div className="options">
+                {m.options.map((o) => (
+                  <button key={o} className="opt" onClick={() => pick(o)}>
+                    {o}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
+
         {busy && (
           <div className="step running">
             <span className="dot" />
@@ -64,9 +84,15 @@ export default function ChatPanel({ messages, busy, elapsed, onSend }: Props) {
             }
           }}
         />
-        <button className="send" disabled={busy || !text.trim()} onClick={submit}>
-          {busy ? '生成中' : '发送'}
-        </button>
+        {busy ? (
+          <button className="send stop" onClick={onStop}>
+            停止
+          </button>
+        ) : (
+          <button className="send" disabled={!text.trim()} onClick={submit}>
+            发送
+          </button>
+        )}
       </div>
     </div>
   )

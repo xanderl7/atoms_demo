@@ -10,12 +10,14 @@ export interface Step {
   status: StepStatus
 }
 
-/** 对话消息。assistant 消息可以携带步骤流 */
+/** 对话消息。assistant 消息可以携带步骤流和 HITL 选项 */
 export interface Message {
   id: string
   role: Role
   content: string
   steps?: Step[]
+  /** 澄清选项：点一下直接作为回答发送 */
+  options?: string[]
 }
 
 /** 一个「应用版本」：一次生成的结果快照。多轮迭代 = 追加版本 */

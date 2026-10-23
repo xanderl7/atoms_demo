@@ -13,15 +13,21 @@ const headersOf = (cfg: LLMConfig) => ({
  * 统一发请求。若模型不支持关闭思考（glm-5.x 会报 1210），
  * 自动去掉 thinking 参数重试一次 —— 换模型不用改代码。
  */
-async function call(cfg: LLMConfig, payload: Record<string, unknown>): Promise<Response> {
+async function call(
+  cfg: LLMConfig,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<Response> {
   const send = async (p: Record<string, unknown>) => {
     try {
       return await fetch(urlOf(cfg), {
         method: 'POST',
         headers: headersOf(cfg),
         body: JSON.stringify(p),
+        signal,
       })
-    } catch {
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw e // 用户主动中断，原样往上抛
       // fetch 本身抛错 = 请求根本没发出去：跨域被拦 / 代理没起 / 断网
       throw new Error(
         '请求发不出去。检查：① baseURL 是否为 /zhipu ② npm run dev 是否在运行 ③ 网络'
@@ -49,9 +55,14 @@ const basePayload = (cfg: LLMConfig, messages: ChatMsg[], temperature: number, s
   thinking: { type: cfg.thinking },
 })
 
-/** 非流式：一次性拿完整回复 */
-export async function chat(cfg: LLMConfig, messages: ChatMsg[], temperature = 0.7): Promise<string> {
-  const res = await call(cfg, basePayload(cfg, messages, temperature, false))
+/** 非流式：一次性拿完整回复。signal 用于中断 */
+export async function chat(
+  cfg: LLMConfig,
+  messages: ChatMsg[],
+  temperature = 0.7,
+  signal?: AbortSignal
+): Promise<string> {
+  const res = await call(cfg, basePayload(cfg, messages, temperature, false), signal)
   const json = await res.json()
   return json.choices?.[0]?.message?.content ?? ''
 }
@@ -64,9 +75,10 @@ export async function chatStream(
   cfg: LLMConfig,
   messages: ChatMsg[],
   onDelta?: (chunk: string, full: string) => void,
-  temperature = 0.7
+  temperature = 0.7,
+  signal?: AbortSignal
 ): Promise<string> {
-  const res = await call(cfg, basePayload(cfg, messages, temperature, true))
+  const res = await call(cfg, basePayload(cfg, messages, temperature, true), signal)
 
   const reader = res.body!.getReader()
   const decoder = new TextDecoder()
