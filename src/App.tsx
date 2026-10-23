@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ChatPanel from './components/ChatPanel'
 import PreviewPane from './components/PreviewPane'
 import CodePane from './components/CodePane'
@@ -6,13 +6,19 @@ import Settings from './components/Settings'
 import type { AppVersion, Message, Step } from './types'
 import { loadConfig, saveConfig, type LLMConfig } from './config'
 import { chat } from './llm'
-import { SYSTEM_PLAN, buildCodeMessages, extractHtml } from './prompts'
+import { SYSTEM_ROUTER, parseRouter, buildCodeMessages, extractHtml } from './prompts'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
-const INITIAL_STEPS: Step[] = [
-  { id: 'plan', label: '理解需求', status: 'pending' },
-  { id: 'code', label: '生成代码', status: 'pending' },
+const STEP_LABELS = [
+  { id: 'route', label: '判断意图' },
+  { id: 'plan', label: '拆解需求' },
+  { id: 'code', label: '生成代码' },
+]
+
+const mkSteps = (): Step[] => STEP_LABELS.map((s) => ({ ...s, status: 'pending' }))
+const onlyStep = (id: string, label: string, status: Step['status']): Step[] => [
+  { id, label, status },
 ]
 
 export default function App() {
@@ -26,6 +32,15 @@ export default function App() {
   const [view, setView] = useState<'preview' | 'code'>('preview')
   const [reloadKey, setReloadKey] = useState(0)
   const [busy, setBusy] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+
+  // 生成时每秒 +1，让人看到「在跑」而不是「卡住」
+  useEffect(() => {
+    if (!busy) return
+    setElapsed(0)
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [busy])
 
   const current = versions[currentIdx]
 
@@ -42,6 +57,7 @@ export default function App() {
     )
 
   async function handleSend(text: string) {
+    const t0 = Date.now() // 闭包里的 elapsed 是旧值，必须用时间戳自己算
     setBusy(true)
     setMessages((p) => [...p, { id: uid(), role: 'user', content: text }])
 
@@ -59,34 +75,49 @@ export default function App() {
     const botId = uid()
     setMessages((p) => [
       ...p,
-      {
-        id: botId,
-        role: 'assistant',
-        content: '',
-        steps: INITIAL_STEPS.map((s) => ({ ...s })),
-      },
+      { id: botId, role: 'assistant', content: '', steps: mkSteps() },
     ])
 
     try {
-      // Step 1: 拆解需求
+      // Step 1: 判意图 + 拆需求（合并成一次调用，省 2-3 秒）
+      setStep(botId, 'route', 'running')
+      const raw = await chat(
+        cfg,
+        [
+          { role: 'system', content: SYSTEM_ROUTER },
+          { role: 'user', content: text },
+        ],
+        0.2
+      )
+      const r = parseRouter(raw)
+      setStep(botId, 'route', 'done')
+
+      // 只是聊天：回一句话就结束，不碰代码
+      if (r.intent === 'chat') {
+        patchMsg(botId, {
+          content: r.reply || '你好！描述一个你想要的应用，我来帮你做出来。',
+          steps: onlyStep('route', '判断意图', 'done'),
+        })
+        setBusy(false)
+        return
+      }
+
       setStep(botId, 'plan', 'running')
-      const plan = await chat(cfg, [
-        { role: 'system', content: SYSTEM_PLAN },
-        { role: 'user', content: text },
-      ], 0.3)
       setStep(botId, 'plan', 'done')
-      patchMsg(botId, { content: plan })
+      patchMsg(botId, { content: r.plan })
 
       // Step 2: 生成代码（带上上一版 —— 天然支持多轮迭代）
       setStep(botId, 'code', 'running')
-      const raw = await chat(cfg, buildCodeMessages(text, plan, current?.code ?? null))
-      const code = extractHtml(raw)
+      const rawCode = await chat(cfg, buildCodeMessages(text, r.plan, current?.code ?? null))
+      const code = extractHtml(rawCode)
 
-      setVersions((p) => [...p, { id: uid(), prompt: text, plan, code, createdAt: Date.now() }])
+      setVersions((p) => [...p, { id: uid(), prompt: text, plan: r.plan, code, createdAt: Date.now() }])
       setCurrentIdx((i) => i + 1)
       setReloadKey((k) => k + 1)
       setStep(botId, 'code', 'done')
-      patchMsg(botId, { content: `${plan}\n\n已生成 ${code.length} 字符，右侧可预览。` })
+      patchMsg(botId, {
+        content: `${r.plan}\n\n已生成 ${code.length} 字符（耗时 ${Math.round((Date.now() - t0) / 1000)}s），右侧可预览。`,
+      })
     } catch (e: any) {
       setMessages((p) =>
         p.map((m) =>
@@ -124,7 +155,7 @@ export default function App() {
       </div>
 
       <div className="main">
-        <ChatPanel messages={messages} busy={busy} onSend={handleSend} />
+        <ChatPanel messages={messages} busy={busy} elapsed={elapsed} onSend={handleSend} />
         {view === 'preview' ? (
           <PreviewPane code={current?.code ?? ''} reloadKey={reloadKey} />
         ) : (

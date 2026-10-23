@@ -4,10 +4,12 @@ import type { Message } from '../types'
 interface Props {
   messages: Message[]
   busy: boolean
+  /** 已等待秒数，生成时实时显示，避免看起来像卡死 */
+  elapsed: number
   onSend: (text: string) => void
 }
 
-export default function ChatPanel({ messages, busy, onSend }: Props) {
+export default function ChatPanel({ messages, busy, elapsed, onSend }: Props) {
   const [text, setText] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -40,6 +42,12 @@ export default function ChatPanel({ messages, busy, onSend }: Props) {
             )}
           </div>
         ))}
+        {busy && (
+          <div className="step running">
+            <span className="dot" />
+            已等待 {elapsed}s{elapsed > 15 ? '（生成较慢，通常 20-40s）' : ''}
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 

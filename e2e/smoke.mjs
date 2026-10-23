@@ -64,8 +64,25 @@ check('有明确的填 Key 提示', (await page.locator('.bubble.assistant').las
 await page.locator('.modal .icon-btn', { hasText: '取消' }).click().catch(() => {})
 await page.waitForTimeout(200)
 
-// ===== 用例 3：完整生成流程 =====
+// ===== 用例 3：意图路由 —— 聊天不该生成页面 =====
 await setCfg(KEY)
+await page.locator('.composer textarea').fill('你好')
+await page.locator('.send').click()
+// 等等待态结束（发送按钮清空输入后始终是 disabled，不能拿它判断）
+const waitIdle = (ms = 90000) =>
+  page.waitForFunction(() => document.querySelectorAll('.step.running').length === 0, {
+    timeout: ms,
+  })
+
+await page.waitForSelector('.step.running', { timeout: 15000 }).catch(() => {})
+await waitIdle(90000)
+await page.waitForTimeout(800)
+const chatReply = await page.locator('.bubble.assistant').last().innerText()
+check('说"你好"时不生成应用', !chatReply.includes('已生成'), JSON.stringify(chatReply.slice(0, 60)))
+check('聊天有文字回复', chatReply.trim().length > 0)
+check('聊天后预览区仍为空态', (await page.locator('iframe').count()) === 0)
+
+// ===== 用例 4：完整生成流程 =====
 const PROMPT = '做一个番茄钟：25分钟倒计时，可以开始、暂停、重置'
 await page.locator('.composer textarea').fill(PROMPT)
 await page.locator('.send').click()
@@ -73,21 +90,23 @@ await page.locator('.send').click()
 await page.waitForSelector('.bubble.user', { timeout: 5000 })
 check('用户消息立即显示', (await page.locator('.bubble.user').count()) >= 1)
 
+// 生成中要出现「已等待 Xs」，否则用户会以为卡死
+await page.waitForTimeout(1200)
+const runningText = await page.locator('.msgs').innerText().catch(() => '')
+check('生成中显示已等待秒数', /已等待\s*\d+s/.test(runningText), runningText.slice(-60))
+
 await page.waitForSelector('.step', { timeout: 5000 })
-check('出现步骤条', (await page.locator('.step').count()) >= 2)
+check('出现步骤条（3 步）', (await page.locator('.step').count()) >= 3)
 
 let done = false
 try {
-  await page.waitForFunction(
-    () => {
-      const s = [...document.querySelectorAll('.step')]
-      return s.length > 0 && s.every((x) => x.classList.contains('done'))
-    },
-    { timeout: 180000 }
-  )
-  done = true
+  await waitIdle(180000)
+  done = await page.evaluate(() => {
+    const s = [...document.querySelectorAll('.step')]
+    return s.length >= 3 && s.every((x) => x.classList.contains('done'))
+  })
 } catch {}
-check('两步流程全部完成', done)
+check('三步流程全部完成', done)
 
 const lastMsg = await page.locator('.bubble.assistant').last().innerText().catch(() => '')
 check('助手有回复内容', lastMsg.trim().length > 0)
@@ -122,14 +141,11 @@ await page.locator('.composer textarea').fill('把主色调改成绿色')
 await page.locator('.send').click()
 let iterDone = false
 try {
-  await page.waitForFunction(
-    () => {
-      const s = [...document.querySelectorAll('.step')].slice(-2)
-      return s.length === 2 && s.every((x) => x.classList.contains('done'))
-    },
-    { timeout: 180000 }
-  )
-  iterDone = true
+  await waitIdle(180000)
+  iterDone = await page.evaluate(() => {
+    const s = [...document.querySelectorAll('.step')].slice(-3)
+    return s.length === 3 && s.every((x) => x.classList.contains('done'))
+  })
 } catch {}
 check('第二轮迭代完成', iterDone)
 const lastMsg2 = await page.locator('.bubble.assistant').last().innerText().catch(() => '')
