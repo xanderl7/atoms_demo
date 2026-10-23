@@ -13,7 +13,12 @@ const time = (t: number) =>
 export default function LogPanel({ onClose }: Props) {
   const [items, setItems] = useState<LogEntry[]>(log.list())
 
-  useEffect(() => log.subscribe(setItems), [])
+  useEffect(() => {
+    const off = log.subscribe(setItems)
+    return () => {
+      off()
+    }
+  }, [])
 
   return (
     <div className="mask" onClick={onClose}>
