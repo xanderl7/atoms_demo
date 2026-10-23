@@ -250,7 +250,22 @@ export default function App() {
     // 「改成第二版 / 改回第2版 / 改过来吧」—— 明确指代某一版，
     // 直接在版本历史里切过去。让模型干这事它只会猜（实测踩过坑）。
     const versionTarget = resolveVersionRef(text, versions.length, currentIdx)
-    if (versionTarget !== null && versionTarget !== currentIdx) {
+    if (versionTarget !== null) {
+      // 已经停在目标版本了 —— 也要拦住，不能落到生成流程。
+      // 否则用户说"改成第二版"而当前正是第 2 版时，会白白重新生成一版（70s）。
+      if (versionTarget === currentIdx) {
+        log.info('version-switch', `已经在第 ${currentIdx + 1} 版，无需切换`)
+        setMessages((p) => [
+          ...p,
+          {
+            id: uid(),
+            role: 'assistant',
+            content: `当前已经在第 ${currentIdx + 1} 版了（共 ${versions.length} 版），不用改。\n如果你想在这一版基础上改点别的，直接说改什么就行。`,
+          },
+        ])
+        setBusy(false)
+        return
+      }
       setCurrentIdx(versionTarget)
       setReloadKey((k) => k + 1)
       log.info('version-switch', `切到第 ${versionTarget + 1} 版（共 ${versions.length} 版）`, {

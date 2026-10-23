@@ -8,3 +8,8 @@ dist-ssr
 npm-debug.log*
 .env
 .env.local
+
+# 看门狗运行时产物（不进 git）
+.heartbeat
+scripts/watchdog.log
+scripts/STALL_ALERT
