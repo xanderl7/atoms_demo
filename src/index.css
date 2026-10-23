@@ -354,8 +354,23 @@ textarea { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 6px;
   font-weight: 600;
+}
+
+.fe-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fe-toggle {
+  background: none;
+  border: none;
+  color: #ffb4b4;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 2px 0;
+  cursor: pointer;
 }
 
 .fe-fix {
@@ -383,6 +398,11 @@ textarea { font-family: inherit; }
 
 .fe-item + .fe-item {
   margin-top: 3px;
+}
+
+/* 展开时第一条和标题之间留点间距 */
+.fe-item:first-child {
+  margin-top: 6px;
 }
 
 .fe-loc {

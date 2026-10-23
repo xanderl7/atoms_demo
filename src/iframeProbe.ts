@@ -57,7 +57,14 @@ var send=function(kind,msg,extra){
   }catch(e){}
 };
 window.addEventListener('error',function(e){
-  send('error',e.message||'未知错误',{source:e.filename,line:e.lineno,stack:e.error&&e.error.stack});
+  // 【只报 JS 运行时错误】。
+  // 资源加载失败（图片挂了、CDN 被墙、字体超时）也会走这条 capture 监听器，
+  // 但那种事件的 target 是 <img>/<script> 元素、message 是空的 ——
+  // 报上去只会显示成"未知错误"，纯误导用户。
+  // 判据：JS 错误的 target 是 window，资源错误的 target 是元素。
+  if (!e || e.target !== window) return;
+  if (!e.message) return;
+  send('error',e.message,{source:e.filename,line:e.lineno,stack:e.error&&e.error.stack});
 },true);
 window.addEventListener('unhandledrejection',function(e){
   var r=e.reason;
@@ -95,10 +102,17 @@ export function withProbe(html: string): string {
 
 /**
  * 在主应用里监听 iframe 传来的错误。
- * 返回错误列表 + 清理函数。
+ *
+ * resetKey：换版本 / 刷新预览时变化的值。变化就清空旧错误 ——
+ * 否则上一页的错误会一直挂在预览区，用户看到的是不存在的"运行时问题"。
  */
-export function useIframeErrors(): IframeError[] {
+export function useIframeErrors(resetKey?: number | string): IframeError[] {
   const [errors, setErrors] = useState<IframeError[]>([])
+
+  // 换版本就清空。旧 iframe 会被卸载，它的错误不该再算在新版头上
+  useEffect(() => {
+    setErrors([])
+  }, [resetKey])
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {

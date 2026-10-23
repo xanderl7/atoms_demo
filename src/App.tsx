@@ -76,7 +76,9 @@ export default function App() {
    */
   const lastOptionsRef = useRef<string[]>([])
   /** 预览区里 iframe 报出来的运行时错误 —— 「点了没反应」的真相 */
-  const frameErrors = useIframeErrors()
+  const frameErrors = useIframeErrors(reloadKey)
+  /** 报错条默认折叠，别把预览区顶部压掉 */
+  const [errOpen, setErrOpen] = useState(false)
 
   // 生成时每秒 +1，让人看到「在跑」而不是「卡住」
   useEffect(() => {
@@ -461,22 +463,31 @@ export default function App() {
               <div className="frame-errors">
                 <div className="fe-head">
                   <span>预览里有 {frameErrors.length} 个运行时问题</span>
-                  <button
-                    className="fe-fix"
-                    onClick={() => {
-                      const last = frameErrors[frameErrors.length - 1]
-                      void handleSend(`页面运行时报错：${last.message}\n请修好这个错误，让相关交互能正常工作。`)
-                    }}
-                  >
-                    让 AI 修
-                  </button>
+                  <span className="fe-actions">
+                    {/* 默认折叠成一行，别把预览区顶部压掉 */}
+                    <button className="fe-toggle" onClick={() => setErrOpen((v) => !v)}>
+                      {errOpen ? '收起' : '详情'}
+                    </button>
+                    <button
+                      className="fe-fix"
+                      onClick={() => {
+                        const last = frameErrors[frameErrors.length - 1]
+                        void handleSend(
+                          `页面运行时报错：${last.message}\n请修好这个错误，让相关交互能正常工作。`
+                        )
+                      }}
+                    >
+                      让 AI 修
+                    </button>
+                  </span>
                 </div>
-                {frameErrors.map((e, i) => (
-                  <div key={i} className="fe-item">
-                    {e.message}
-                    {e.line ? <span className="fe-loc"> (行 {e.line})</span> : null}
-                  </div>
-                ))}
+                {errOpen &&
+                  frameErrors.map((e, i) => (
+                    <div key={i} className="fe-item">
+                      {e.message}
+                      {e.line ? <span className="fe-loc"> (行 {e.line})</span> : null}
+                    </div>
+                  ))}
               </div>
             )}
             <PreviewPane code={current?.code ?? ''} reloadKey={reloadKey} />
