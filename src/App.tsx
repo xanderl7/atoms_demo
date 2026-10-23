@@ -2,18 +2,22 @@ import { useState } from 'react'
 import ChatPanel from './components/ChatPanel'
 import PreviewPane from './components/PreviewPane'
 import CodePane from './components/CodePane'
+import Settings from './components/Settings'
 import type { AppVersion, Message, Step } from './types'
-import { fakeGenerate } from './mock'
+import { loadConfig, saveConfig, type LLMConfig } from './config'
+import { chat } from './llm'
+import { SYSTEM_PLAN, buildCodeMessages, extractHtml } from './prompts'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
-/** Step 1 的两步流程骨架。Step 4 会把 Plan 真正接进去 */
 const INITIAL_STEPS: Step[] = [
   { id: 'plan', label: '理解需求', status: 'pending' },
   { id: 'code', label: '生成代码', status: 'pending' },
 ]
 
 export default function App() {
+  const [cfg, setCfg] = useState<LLMConfig>(loadConfig)
+  const [showSettings, setShowSettings] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     { id: uid(), role: 'assistant', content: '你好，描述一个你想要的应用，我来帮你把它做出来。' },
   ])
@@ -38,29 +42,57 @@ export default function App() {
     )
 
   async function handleSend(text: string) {
+    if (!cfg.apiKey) {
+      setShowSettings(true)
+      patchMsg(messages[messages.length - 1].id, { content: '先在右上角齿轮里填 API Key。' })
+      return
+    }
+
     setBusy(true)
     setMessages((p) => [...p, { id: uid(), role: 'user', content: text }])
 
     const botId = uid()
     setMessages((p) => [
       ...p,
-      { id: botId, role: 'assistant', content: '正在生成…', steps: INITIAL_STEPS.map((s) => ({ ...s })) },
+      {
+        id: botId,
+        role: 'assistant',
+        content: '',
+        steps: INITIAL_STEPS.map((s) => ({ ...s })),
+      },
     ])
 
-    setStep(botId, 'plan', 'running')
-    setStep(botId, 'code', 'pending')
+    try {
+      // Step 1: 拆解需求
+      setStep(botId, 'plan', 'running')
+      const plan = await chat(cfg, [
+        { role: 'system', content: SYSTEM_PLAN },
+        { role: 'user', content: text },
+      ], 0.3)
+      setStep(botId, 'plan', 'done')
+      patchMsg(botId, { content: plan })
 
-    // ---- Step 2 会把这里换成真实 LLM 调用 ----
-    const code = await fakeGenerate(text)
-    setStep(botId, 'plan', 'done')
-    setStep(botId, 'code', 'running')
+      // Step 2: 生成代码（带上上一版 —— 天然支持多轮迭代）
+      setStep(botId, 'code', 'running')
+      const raw = await chat(cfg, buildCodeMessages(text, plan, current?.code ?? null))
+      const code = extractHtml(raw)
 
-    setVersions((p) => [...p, { id: uid(), prompt: text, code, createdAt: Date.now() }])
-    setCurrentIdx((i) => i + 1)
-    setReloadKey((k) => k + 1)
-    setStep(botId, 'code', 'done')
-    patchMsg(botId, { content: `已生成，共 ${code.length} 字符。` })
-    setBusy(false)
+      setVersions((p) => [...p, { id: uid(), prompt: text, plan, code, createdAt: Date.now() }])
+      setCurrentIdx((i) => i + 1)
+      setReloadKey((k) => k + 1)
+      setStep(botId, 'code', 'done')
+      patchMsg(botId, { content: `${plan}\n\n已生成 ${code.length} 字符，右侧可预览。` })
+    } catch (e: any) {
+      setMessages((p) =>
+        p.map((m) =>
+          m.id === botId
+            ? { ...m, content: `生成失败：${e.message}`, steps: m.steps?.map((s) => ({ ...s, status: 'error' })) }
+            : m
+        )
+      )
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -81,6 +113,9 @@ export default function App() {
         <button className="icon-btn" onClick={() => setReloadKey((k) => k + 1)}>
           刷新
         </button>
+        <button className="icon-btn" onClick={() => setShowSettings(true)} title="模型设置">
+          ⚙︎
+        </button>
       </div>
 
       <div className="main">
@@ -91,6 +126,17 @@ export default function App() {
           <CodePane code={current?.code ?? ''} />
         )}
       </div>
+
+      {showSettings && (
+        <Settings
+          value={cfg}
+          onSave={(c) => {
+            setCfg(c)
+            saveConfig(c)
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   )
 }

@@ -191,6 +191,46 @@ textarea { font-family: inherit; }
 }
 .code .ln { color: #4b556b; user-select: none; display: inline-block; width: 44px; text-align: right; margin-right: 16px; }
 
+/* ---------- 设置弹窗 ---------- */
+.mask {
+  position: fixed;
+  inset: 0;
+  background: #00000099;
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+.modal {
+  width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 20px 60px #0008;
+}
+.modal h3 { margin: 0 0 4px; font-size: 16px; }
+.modal .hint { margin: 0 0 16px; font-size: 12.5px; color: var(--muted); }
+.modal label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.modal input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+}
+.modal input:focus { border-color: var(--accent); }
+.modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
 .empty {
   height: 100%;
   display: grid;
