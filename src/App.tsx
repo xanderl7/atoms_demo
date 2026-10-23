@@ -48,6 +48,20 @@ const doneSteps = (ids: string[]): Step[] =>
 
 const isAbort = (e: any) => e?.name === 'AbortError'
 
+/**
+ * plan 里出现问号 = 模型在向用户反问。
+ * 这时候【绝不能】照着它生成代码 —— 用户截图反馈的 bug 就是这个：
+ * 助手气泡先问"你主要想用后端来做什么？"，紧接着"正在生成代码… 5861 字符"，
+ * 一边问一边干，用户还没回答，页面已经生成完了。
+ *
+ * 判据要同时有问号和疑问词，否则"FAQ 区块""在线问答"这种正常 plan 会被误杀。
+ */
+const planIsQuestion = (plan: string) => {
+  const t = plan.trim()
+  if (!t || !/[？?]/.test(t)) return false
+  return /(吗|呢|哪些|什么|怎么|如何|哪一|要不要|能不能|可以吗|请问|想用|想做)/.test(t)
+}
+
 export default function App() {
   const [cfg, setCfg] = useState<LLMConfig>(loadConfig)
   const [showSettings, setShowSettings] = useState(false)
@@ -265,6 +279,24 @@ export default function App() {
       setStep(botId, 'plan', 'running')
       const plan = r.plan || (r.reply ? `- ${r.reply}` : '')
       setStep(botId, 'plan', 'done')
+
+      // ── plan 是反问 → 停下来问，绝不生成 ────────────────────
+      // 模型经常把"你主要想用后端来做什么？"这种反问写进 plan 字段，
+      // 然后系统就照着这句反问去生成代码了 —— 用户看到的是
+      // "一边问我、一边已经把东西做出来了"。
+      //
+      // fromOption 时除外：用户点了选项就是已经作答，这轮必须出东西。
+      if (planIsQuestion(plan) && !fromOption) {
+        const opts = ['你定就行，按默认的来', '我再补充说明']
+        pendingRef.current = text
+        lastOptionsRef.current = opts
+        setClarifyHistory((h) => [...h, { q: plan, a: text }])
+        log.info('clarify', 'plan 里是反问，改为先问清楚', { plan: plan.slice(0, 120) })
+        patchMsg(botId, { content: plan, steps: doneSteps(['route']), options: opts })
+        setBusy(false)
+        return
+      }
+
       patchMsg(botId, { content: plan })
 
       // ---- 局部修改：不重发全文，只发相关区块 ----
