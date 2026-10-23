@@ -42,14 +42,19 @@ export default function App() {
     )
 
   async function handleSend(text: string) {
-    if (!cfg.apiKey) {
-      setShowSettings(true)
-      patchMsg(messages[messages.length - 1].id, { content: '先在右上角齿轮里填 API Key。' })
-      return
-    }
-
     setBusy(true)
     setMessages((p) => [...p, { id: uid(), role: 'user', content: text }])
+
+    // 没填 Key：把用户的话照常显示出来，再提示去填 —— 不能让人以为消息发丢了
+    if (!cfg.apiKey) {
+      setShowSettings(true)
+      setMessages((p) => [
+        ...p,
+        { id: uid(), role: 'assistant', content: '请先在右上角 ⚙︎ 里填写 API Key，然后重新发送。' },
+      ])
+      setBusy(false)
+      return
+    }
 
     const botId = uid()
     setMessages((p) => [
