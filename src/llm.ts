@@ -2,24 +2,51 @@ import type { LLMConfig } from './config'
 
 export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string }
 
+const urlOf = (cfg: LLMConfig) => `${cfg.baseURL.replace(/\/$/, '')}/chat/completions`
+
+const headersOf = (cfg: LLMConfig) => ({
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${cfg.apiKey}`,
+})
+
+/**
+ * 统一发请求。若模型不支持关闭思考（glm-5.x 会报 1210），
+ * 自动去掉 thinking 参数重试一次 —— 换模型不用改代码。
+ */
+async function call(cfg: LLMConfig, payload: Record<string, unknown>): Promise<Response> {
+  const send = (p: Record<string, unknown>) =>
+    fetch(urlOf(cfg), { method: 'POST', headers: headersOf(cfg), body: JSON.stringify(p) })
+
+  let res = await send(payload)
+  if (!res.ok) {
+    const text = await res.text()
+    if (payload.thinking && /1210|不支持关闭思考/.test(text)) {
+      const { thinking, ...rest } = payload
+      return send(rest)
+    }
+    throw new Error(`LLM ${res.status}: ${text.slice(0, 300)}`)
+  }
+  return res
+}
+
+const basePayload = (cfg: LLMConfig, messages: ChatMsg[], temperature: number, stream: boolean) => ({
+  model: cfg.model,
+  messages,
+  temperature,
+  stream,
+  thinking: { type: cfg.thinking },
+})
+
 /** 非流式：一次性拿完整回复 */
 export async function chat(cfg: LLMConfig, messages: ChatMsg[], temperature = 0.7): Promise<string> {
-  const res = await fetch(`${cfg.baseURL.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`,
-    },
-    body: JSON.stringify({ model: cfg.model, messages, temperature, stream: false }),
-  })
-  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  const res = await call(cfg, basePayload(cfg, messages, temperature, false))
   const json = await res.json()
   return json.choices?.[0]?.message?.content ?? ''
 }
 
 /**
  * 流式：每来一段就回调 onDelta，最后返回完整文本。
- * 浏览器 fetch 直接读 SSE，不需要后端。
+ * 只取 delta.content，模型的思维链（reasoning_content）会被自动丢弃，不会污染代码。
  */
 export async function chatStream(
   cfg: LLMConfig,
@@ -27,15 +54,7 @@ export async function chatStream(
   onDelta?: (chunk: string, full: string) => void,
   temperature = 0.7
 ): Promise<string> {
-  const res = await fetch(`${cfg.baseURL.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`,
-    },
-    body: JSON.stringify({ model: cfg.model, messages, temperature, stream: true }),
-  })
-  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  const res = await call(cfg, basePayload(cfg, messages, temperature, true))
 
   const reader = res.body!.getReader()
   const decoder = new TextDecoder()

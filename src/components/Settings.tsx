@@ -34,6 +34,16 @@ export default function Settings({ value, onSave, onClose }: Props) {
           模型
           <input value={c.model} onChange={(e) => setC({ ...c, model: e.target.value })} />
         </label>
+        <label>
+          思维链
+          <select
+            value={c.thinking}
+            onChange={(e) => setC({ ...c, thinking: e.target.value as any })}
+          >
+            <option value="disabled">关闭（快 3-4 倍，推荐）</option>
+            <option value="enabled">开启（复杂需求可能更准）</option>
+          </select>
+        </label>
 
         <div className="modal-actions">
           <button className="icon-btn" onClick={() => setC(DEFAULT_CONFIG)}>

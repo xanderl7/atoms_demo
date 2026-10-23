@@ -4,6 +4,12 @@ export interface LLMConfig {
   baseURL: string
   apiKey: string
   model: string
+  /**
+   * 是否关闭思维链。glm-4.5-air / glm-4.6 支持关闭；
+   * glm-5.x 强制思考，关不掉 —— llm.ts 里会自动去掉这个参数重试。
+   * 实测关掉后生成同样页面快 3-4 倍。
+   */
+  thinking: 'disabled' | 'enabled'
 }
 
 const KEY = 'atoms-demo.llm-config'
@@ -14,6 +20,7 @@ export const DEFAULT_CONFIG: LLMConfig = {
   baseURL: '/zhipu',
   apiKey: '',
   model: 'glm-4.5-air',
+  thinking: 'disabled',
 }
 
 export function loadConfig(): LLMConfig {
