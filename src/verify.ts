@@ -14,6 +14,8 @@ export interface StaticIssue {
   message: string
   /** 致命问题：页面基本跑不起来，必须修 */
   fatal?: boolean
+  /** 问题所在行号（有就给，修复提示里带上，模型改得更准） */
+  line?: number
 }
 
 /** 常见占位/未完成标记 —— 需求里明确禁止这些东西出现在交付里 */
@@ -102,6 +104,7 @@ export function staticCheck(html: string): StaticIssue[] {
       message: `JS 里引用了${dangling
         .map((d) => `「${d.kind === '#' ? 'id' : 'class'}="${d.name}"」`)
         .join('、')}，但全文找不到对应元素的定义 —— querySelector 会返回 null，点了相关功能会直接报错`,
+      line: lineOf(html, dangling[0].index),
     })
   }
 
@@ -112,32 +115,80 @@ export function staticCheck(html: string): StaticIssue[] {
   //    可能有"类型:input"这种ASCII冒头词组，会误报）。
   //    单/双引号分两个正则：:contains("xx") 的参数里常带另一种引号。
   //    注意排除 :first-child/:last-child 这类合法 CSS 伪类（后面跟 -）。
-  const jqSelector = [...matchAllSelectorArgs(html)].find((sel) => JQUERY_PSEUDO.test(sel))
+  const jqSelector = [...matchAllSelectorArgs(html)].find((sel) => JQUERY_PSEUDO.test(sel.arg))
   if (jqSelector) {
+    const at = html.indexOf(jqSelector.arg)
     issues.push({
-      message: `querySelector 里用了 jQuery 专有的伪类「${jqSelector}」—— 原生 querySelector 不认识它，执行到这句会直接抛 SyntaxError。jQuery 写法要改成原生（如 [...document.querySelectorAll('button')].find(b => b.textContent.includes('xx'))）`,
+      message: `querySelector 里用了 jQuery 专有的伪类「${jqSelector.arg}」—— 原生 querySelector 不认识它，执行到这句会直接抛 SyntaxError。jQuery 写法要改成原生（如 [...document.querySelectorAll('button')].find(b => b.textContent.includes('xx'))）`,
+      line: lineOf(html, at),
     })
   }
 
+  // ⑨ 表单提交会刷新页面：<form> 没写 action（默认提交到当前 URL），
+  //    也没有任何阻止提交的迹象 —— 用户按一下回车或点提交按钮，
+  //    整个页面刷新，页面状态全丢。模型生成表单时的高发遗漏。
+  //    判据：form 里有可输入元素（回车即提交）或默认 submit 的按钮，
+  //    且全文找不到 onsubmit 属性 / submit 监听 / preventDefault。
+  //    写了 action 的表单归 ⑥ 管（action="#" 只是片段导航，不打没状态）。
+  const formMatch = FORM_TAG.exec(html)
+  if (formMatch && !/\saction\s*=/i.test(formMatch[1]) && !hasSubmitGuard(html)) {
+    const inner = formMatch[2]
+    const typeable = /<(input|textarea|select)\b/i.test(inner)
+    const submitBtn = /<button\b(?![^>]*type\s*=\s*["']button["'])[^>]*>/i.test(inner)
+    if (typeable || submitBtn) {
+      issues.push({
+        message:
+          '表单没有阻止默认提交 —— 用户按回车或点提交按钮会刷新整个页面，页面状态全部丢失。必须加 onsubmit="event.preventDefault()" 或在 JS 里监听 submit 并 preventDefault()',
+        line: lineOf(html, formMatch.index),
+      })
+    }
+  }
+
   return issues
+}
+
+/** 第几个字符在哪一行（1 起）—— 给修复提示带上行号 */
+function lineOf(html: string, index: number): number | undefined {
+  if (index < 0) return undefined
+  return html.slice(0, index).split('\n').length
 }
 
 /** querySelector 系函数的参数字面量（单/双引号分两个正则，允许参数里带另一种引号） */
 const SELECTOR_ARG_SQ = /(?:querySelector(?:All)?|matches|closest)\(\s*'([^']*)'/g
 const SELECTOR_ARG_DQ = /(?:querySelector(?:All)?|matches|closest)\(\s*"([^"]*)"/g
 
-function* matchAllSelectorArgs(html: string): Generator<string> {
-  for (const m of html.matchAll(SELECTOR_ARG_SQ)) yield m[1]
-  for (const m of html.matchAll(SELECTOR_ARG_DQ)) yield m[1]
+function* matchAllSelectorArgs(html: string): Generator<{ arg: string; index: number }> {
+  for (const m of html.matchAll(SELECTOR_ARG_SQ)) {
+    yield { arg: m[1], index: (m.index ?? 0) + m[0].indexOf(m[1]) }
+  }
+  for (const m of html.matchAll(SELECTOR_ARG_DQ)) {
+    yield { arg: m[1], index: (m.index ?? 0) + m[0].indexOf(m[1]) }
+  }
 }
 
 /** jQuery 专有、原生 querySelector 绝不认识的伪类（:first-child 等合法 CSS 已排除） */
 const JQUERY_PSEUDO =
   /:(contains|parent|visible|hidden|input|button|checkbox|radio|file|image|reset|password|selected|first|last|eq|gt|lt|even|odd|animated|header)(?![-\w])/i
 
-/** getElementById('x')（裸 id）与 querySelector(All)('#x' / '.x')（带前缀）两种字面量引用 */
+/** getElementById('x')（裸 id）与 querySelector(All)('#x' / '.x'）（带前缀）两种字面量引用 */
 const SELECTOR_REF =
   /getElementById\(\s*['"]([\w-]+)['"]|querySelector(?:All)?\(\s*['"]([#.])([\w-]+)['"]/g
+
+/** <form ...>...</form>（第一个就够，多个表单同理） */
+const FORM_TAG = /<form\b([^>]*)>([\s\S]*?)<\/form>/i
+
+/**
+ * 全文有没有「阻止表单默认提交」的写法。
+ * 有其中任意一种就认为表单是被 JS 接管的，不会刷新页面：
+ * onsubmit 属性 / addEventListener('submit') / preventDefault()。
+ */
+function hasSubmitGuard(html: string): boolean {
+  return (
+    /onsubmit\s*=/i.test(html) ||
+    /addEventListener\(\s*['"]submit['"]/i.test(html) ||
+    /preventDefault\s*\(/.test(html)
+  )
+}
 
 /**
  * 找出「被 JS 引用但全文没有任何定义」的 id/class。
@@ -146,15 +197,16 @@ const SELECTOR_REF =
  * 搜到这个名字（HTML 属性、classList、CSS 选择器、模板字符串……都算），
  * 就认为它有定义，跳过；搜不到才是悬空引用。
  */
-function findDanglingSelectors(html: string): { kind: string; name: string }[] {
+function findDanglingSelectors(html: string): { kind: string; name: string; index: number }[] {
   const refs = [...html.matchAll(SELECTOR_REF)].map((m) => ({
     kind: m[1] ? '#' : m[2],
     name: m[1] || m[3],
+    index: (m.index ?? 0) + m[0].indexOf(m[1] ?? m[2] + m[3]),
   }))
   if (!refs.length) return []
   const stripped = html.replace(SELECTOR_REF, '')
   const seen = new Set<string>()
-  const out: { kind: string; name: string }[] = []
+  const out: { kind: string; name: string; index: number }[] = []
   for (const r of refs) {
     const key = r.kind + r.name
     if (seen.has(key)) continue

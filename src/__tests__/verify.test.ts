@@ -177,3 +177,86 @@ describe('staticCheck jQuery 伪类混进原生 querySelector', () => {
     expect(r.some((x) => x.message.includes('jQuery 专有的伪类'))).toBe(false)
   })
 })
+
+describe('staticCheck 表单提交会刷新页面', () => {
+  const formPage = (form: string) =>
+    `<!doctype html><html><head></head><body><h1>报名</h1><p>正文足够长，不会触发空页面告警。</p>
+    ${form}</body></html>`
+
+  it('form 没 action 没拦截 + 有输入框 → 点名（回车即提交）', () => {
+    const r = staticCheck(formPage(`<form><input name="email"><button>提交</button></form>`))
+    expect(r.some((x) => x.message.includes('阻止默认提交'))).toBe(true)
+  })
+
+  it('form 有 onsubmit 属性 → 不报', () => {
+    const r = staticCheck(
+      formPage(`<form onsubmit="event.preventDefault()"><input name="email"><button>提交</button></form>`)
+    )
+    expect(r.some((x) => x.message.includes('阻止默认提交'))).toBe(false)
+  })
+
+  it('JS 里 addEventListener("submit") + preventDefault → 不报', () => {
+    const r = staticCheck(
+      formPage(
+        `<form><input name="email"><button>提交</button></form>
+         <script>document.querySelector('form').addEventListener('submit', function(e){ e.preventDefault() })</script>`
+      )
+    )
+    expect(r.some((x) => x.message.includes('阻止默认提交'))).toBe(false)
+  })
+
+  it('form 写了 action="#"（片段导航，不打没状态）→ 不报', () => {
+    const r = staticCheck(formPage(`<form action="#"><input name="email"><button>提交</button></form>`))
+    expect(r.some((x) => x.message.includes('阻止默认提交'))).toBe(false)
+  })
+
+  it('form 里只有 type="button" 的按钮、没有输入框 → 不报', () => {
+    const r = staticCheck(formPage(`<form><button type="button">只是开关</button></form>`))
+    expect(r.some((x) => x.message.includes('阻止默认提交'))).toBe(false)
+  })
+})
+
+describe('staticCheck 问题带行号', () => {
+  it('悬空选择器报出引用所在行', () => {
+    const html = `<!doctype html>
+<html>
+<body>
+  <p>正文足够长，不会触发空页面告警。</p>
+  <script>
+    document.getElementById('modal').addEventListener('click', function () {})
+  </script>
+</body>
+</html>`
+    const issue = staticCheck(html).find((x) => x.message.includes('querySelector 会返回 null'))
+    expect(issue).toBeDefined()
+    expect(issue!.line).toBe(6)
+  })
+
+  it('jQuery 伪类报出选择器所在行', () => {
+    const html = `<!doctype html>
+<html>
+<body>
+  <p>正文足够长，不会触发空页面告警。</p>
+  <script>
+    document.querySelector('button:contains("x")').click()
+  </script>
+</body>
+</html>`
+    const issue = staticCheck(html).find((x) => x.message.includes('jQuery 专有的伪类'))
+    expect(issue).toBeDefined()
+    expect(issue!.line).toBe(6)
+  })
+
+  it('表单问题报出 form 所在行', () => {
+    const html = `<!doctype html>
+<html>
+<body>
+  <h1>报名</h1>
+  <form><input name="e"><button>提交</button></form>
+</body>
+</html>`
+    const issue = staticCheck(html).find((x) => x.message.includes('阻止默认提交'))
+    expect(issue).toBeDefined()
+    expect(issue!.line).toBe(5)
+  })
+})

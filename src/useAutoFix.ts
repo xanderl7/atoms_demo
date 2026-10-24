@@ -96,7 +96,7 @@ export function useAutoFix(deps: AutoFixDeps): AutoFixApi {
         (e) => e.kind !== 'info'
       )
       const issues: FixIssue[] = [
-        ...staticIssues.map((s) => ({ message: s.message })),
+        ...staticIssues.map((s) => ({ message: s.message, line: s.line })),
         ...runtimeIssues.map((e) => ({ message: e.message, line: e.line })),
       ]
 
