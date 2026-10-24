@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查（strict）
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 生产构建
+        run: npm run build
+
+      # e2e 需要真实 LLM Key，不放 CI 里跑（会花钱、也不该把 Key 泄进日志）。
+      # 本地跑法见 README：ZHIPU_API_KEY=xxx npm run test:e2e
