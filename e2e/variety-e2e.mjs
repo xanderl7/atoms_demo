@@ -122,8 +122,15 @@ for (const [idx, sc] of SCENARIOS.entries()) {
         .join('\n'),
     bubblesBefore
   )
+  // 结论原文（✅通过 / 🔧修复了 N 个 / ⚠️修不完）—— 写进 detail，
+  // 批量跑完能直接看出哪些场景触发了自动修复、有没有误报。
+  // 取最后一条匹配：修复后还会追加复检结论，最后一条才是最终状态
+  const conclMatches = [
+    ...newChat.matchAll(/(✅ 自检通过[^\n]*|🔧 已自动修复[^\n]*|仍有 \d+ 个问题[^\n]*)/g),
+  ]
+  const conclusion = conclMatches.length ? conclMatches[conclMatches.length - 1][0] : selfCheck
   check(sc.name, '生成完成', true, clarified ? '（经一轮澄清）' : '')
-  check(sc.name, '自检结论出现', selfCheck === '已出现', selfCheck)
+  check(sc.name, '自检结论出现', selfCheck === '已出现', conclusion.slice(0, 80))
 
   // 3) iframe 有实质内容。
   //    文本长度不是唯一判据：工具类页面（番茄钟/计算器）天然字少，
