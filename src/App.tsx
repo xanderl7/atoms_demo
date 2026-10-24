@@ -77,7 +77,6 @@ export default function App() {
    * 用户点了选项 = 已经作答，这一轮【不许再追问】，必须直接出东西 ——
    * 否则就成了"你答完我再问一遍"，体验很糟。
    */
-  const lastOptionsRef = useRef<string[]>([])
   /** 预览区里 iframe 报出来的运行时错误 —— 「点了没反应」的真相 */
   const frameErrors = useIframeErrors(reloadKey)
   /** 报错条默认折叠，别把预览区顶部压掉 */
@@ -161,15 +160,17 @@ export default function App() {
     abortRef.current = null
   }
 
-  async function handleSend(text: string) {
+  async function handleSend(text: string, fromOption = false) {
     const t0 = Date.now()
     const controller = new AbortController()
     abortRef.current = controller
     const signal = controller.signal
 
-    // 用户是不是点的我给的选项？是的话这一轮必须出东西，不许再追问
-    const fromOption = lastOptionsRef.current.includes(text)
-    lastOptionsRef.current = []
+    // fromOption：这一轮是不是【点了】我给的选项（ChatPanel 的 pick 显式传 true）。
+    // 是的话必须出东西，不许再追问。
+    // 曾经用 lastOptionsRef.includes(text) 字符串匹配来判断，分不清「点击选项」
+    // 和「手动打了和选项一样的字」——用户打字「作品集展示页」（仍是宽泛词）
+    // 会被误判成已作答，直接开干编假作品。点击是显式动作，必须显式传递。
 
     // 上一轮澄清过：把回答跟原需求拼起来，这次直接开工，不再重复问
     const original = pendingRef.current
@@ -312,7 +313,6 @@ export default function App() {
     ) {
       identityAskedRef.current = true
       const opts = ['先用占位做，我后面自己改', '我告诉你我的名字和职业']
-      lastOptionsRef.current = opts
       // 保留原始需求：用户点"先用占位做"后，模型还得知道要做的是什么页面
       pendingRef.current = original || text
       log.info('clarify', '放行前追问身份信息', { text: enriched.slice(0, 120) })
@@ -394,7 +394,6 @@ export default function App() {
         const opts = r.options?.length
           ? r.options
           : ['视觉样式不对', '内容结构不对', '功能逻辑不对']
-        lastOptionsRef.current = opts
         patchMsg(botId, {
           content:
             r.reply ||
@@ -416,7 +415,6 @@ export default function App() {
         pendingRef.current = text
         setClarifyRounds((n) => n + 1)
         const opts = [...(r.options ?? []), '就按你默认的来']
-        lastOptionsRef.current = opts
         // 记下「我问了什么 / 用户答了什么」，下一轮路由要看到全貌才知道该不该继续问
         setClarifyHistory((h) => [
           ...h,
@@ -446,7 +444,6 @@ export default function App() {
       if (planIsQuestion(plan) && !fromOption) {
         const opts = ['你定就行，按默认的来', '我再补充说明']
         pendingRef.current = text
-        lastOptionsRef.current = opts
         setClarifyHistory((h) => [...h, { q: plan, a: text }])
         log.info('clarify', 'plan 里是反问，改为先问清楚', { plan: plan.slice(0, 120) })
         patchMsg(botId, { content: plan, steps: doneSteps(['route']), options: opts })

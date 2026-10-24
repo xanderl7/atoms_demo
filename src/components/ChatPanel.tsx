@@ -6,7 +6,8 @@ interface Props {
   busy: boolean
   /** 已等待秒数，生成时实时显示，避免看起来像卡死 */
   elapsed: number
-  onSend: (text: string) => void
+  /** fromOption：这一轮是不是点的选项。点了就是已作答，App 必须出东西不许再追问 */
+  onSend: (text: string, fromOption?: boolean) => void
   onStop: () => void
 }
 
@@ -39,13 +40,13 @@ export default function ChatPanel({ messages, busy, elapsed, onSend, onStop }: P
   const submit = () => {
     const v = text.trim()
     if (!v || busy) return
-    onSend(v)
+    onSend(v, false)
     setText('')
   }
 
   const pick = (opt: string) => {
     if (busy) return
-    onSend(opt)
+    onSend(opt, true)
     setText('')
   }
 
