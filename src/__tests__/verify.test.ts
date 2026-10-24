@@ -77,3 +77,58 @@ describe('staticCheck 静态自检', () => {
     expect(r.some((x) => x.message.includes('重复的 id'))).toBe(true)
   })
 })
+
+describe('staticCheck 悬空选择器（交互期 null 引用）', () => {
+  /** 带一个「JS 引用了但全文没定义」的 id 的页面 */
+  const danglingId = `<!doctype html><html><head></head><body>
+  <h1>标题</h1><p>正文足够长，不会触发空页面告警。</p>
+  <script>
+    document.getElementById('modal').addEventListener('click', function(){})
+  </script>
+</body></html>`
+
+  it('悬空 id 引用 → 点名（点了会报 null）', () => {
+    const r = staticCheck(danglingId)
+    expect(r.some((x) => x.message.includes('querySelector 会返回 null'))).toBe(true)
+    expect(r.some((x) => x.message.includes('id="modal"'))).toBe(true)
+  })
+
+  it('悬空 class 引用 → 点名', () => {
+    const bad = danglingId.replace("getElementById('modal')", "querySelector('.menu-btn')")
+    const r = staticCheck(bad)
+    expect(r.some((x) => x.message.includes('class="menu-btn"'))).toBe(true)
+  })
+
+  it('HTML 里定义了同名 id → 不报', () => {
+    const ok = danglingId.replace('<h1>标题', '<div id="modal"></div><h1>标题')
+    const r = staticCheck(ok)
+    expect(r.some((x) => x.message.includes('querySelector 会返回 null'))).toBe(false)
+  })
+
+  it('JS 动态创建（className 赋值）→ 不报（保守跳过）', () => {
+    const dyn = `<!doctype html><html><body><p>正文足够长，不会触发空页面告警。</p>
+    <script>
+      var t = document.createElement('div')
+      t.className = 'toast'
+      document.body.appendChild(t)
+      document.querySelector('.toast').addEventListener('click', function(){})
+    </script></body></html>`
+    expect(staticCheck(dyn).some((x) => x.message.includes('querySelector 会返回 null'))).toBe(
+      false
+    )
+  })
+
+  it('CSS 里用了同名选择器 → 不报（宁可漏报）', () => {
+    const ok = danglingId.replace('</head>', '<style>#modal{display:none}</style></head>')
+    const r = staticCheck(ok)
+    expect(r.some((x) => x.message.includes('querySelector 会返回 null'))).toBe(false)
+  })
+
+  it('模板字符串里动态生成 → 不报', () => {
+    const ok = `<!doctype html><html><body><p>正文足够长，不会触发空页面告警。</p>
+    <script>
+      list.innerHTML = items.map(function(i){ return '<div id="item-' + i + '">' + i + '</div>' }).join('')
+    </script></body></html>`
+    expect(staticCheck(ok).some((x) => x.message.includes('querySelector 会返回 null'))).toBe(false)
+  })
+})

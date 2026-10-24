@@ -87,5 +87,55 @@ export function staticCheck(html: string): StaticIssue[] {
     })
   }
 
+  // ⑦ JS 引用了不存在的 id/class —— querySelector 返回 null，
+  //    点击相关功能直接报 "Cannot read properties of null (reading 'addEventListener')"。
+  //    这类 bug 只在【交互时】暴露，加载自检（iframe 探针）抓不到，
+  //    是"生成了但点了没反应/点完报错"的最常见根因 —— 静态先把一道关。
+  //
+  //    判据从严：只报「全文其他地方再也找不到这个名字」的引用。
+  //    HTML 里定义了的、JS 里动态创建的（模板字符串/createElement/classList）、
+  //    CSS 里用了的，全部跳过。宁可漏报，不能错报 —— 错报会触发无意义的
+  //    修复轮次，2 轮"修不完"还会给好页面弹假警报。
+  const dangling = findDanglingSelectors(html)
+  if (dangling.length) {
+    issues.push({
+      message: `JS 里引用了${dangling
+        .map((d) => `「${d.kind === '#' ? 'id' : 'class'}="${d.name}"」`)
+        .join('、')}，但全文找不到对应元素的定义 —— querySelector 会返回 null，点了相关功能会直接报错`,
+    })
+  }
+
   return issues
+}
+
+/** getElementById('x')（裸 id）与 querySelector(All)('#x' / '.x')（带前缀）两种字面量引用 */
+const SELECTOR_REF =
+  /getElementById\(\s*['"]([\w-]+)['"]|querySelector(?:All)?\(\s*['"]([#.])([\w-]+)['"]/g
+
+/**
+ * 找出「被 JS 引用但全文没有任何定义」的 id/class。
+ *
+ * 判定方法：先把所有引用调用本身从代码里删掉，剩下的部分里如果还能
+ * 搜到这个名字（HTML 属性、classList、CSS 选择器、模板字符串……都算），
+ * 就认为它有定义，跳过；搜不到才是悬空引用。
+ */
+function findDanglingSelectors(html: string): { kind: string; name: string }[] {
+  const refs = [...html.matchAll(SELECTOR_REF)].map((m) => ({
+    kind: m[1] ? '#' : m[2],
+    name: m[1] || m[3],
+  }))
+  if (!refs.length) return []
+  const stripped = html.replace(SELECTOR_REF, '')
+  const seen = new Set<string>()
+  const out: { kind: string; name: string }[] = []
+  for (const r of refs) {
+    const key = r.kind + r.name
+    if (seen.has(key)) continue
+    seen.add(key)
+    const defined = new RegExp(`\\b${r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(
+      stripped
+    )
+    if (!defined) out.push(r)
+  }
+  return out.slice(0, 3)
 }
