@@ -30,6 +30,10 @@ const ok = (name, cond, extra = '') => {
 }
 
 await page.goto('http://localhost:5173', { waitUntil: 'networkidle' })
+// 必须等应用 hydrate 完再制造错误 —— useIframeErrors 的 message 监听器
+// 挂在 React 挂载之后，早于此的错误消息直接丢，报错条就永远不出现
+// （批量跑时 dev server 冷启动慢，这里等不到就会时好时坏）
+await page.waitForSelector('.composer textarea')
 
 /** 在页面里建一个 iframe 并收集它报回来的错误 */
 const probeIframe = async (html) =>
