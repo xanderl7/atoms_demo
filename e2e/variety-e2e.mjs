@@ -70,6 +70,9 @@ const check = (scenario, name, ok, detail = '') => {
 for (const [idx, sc] of SCENARIOS.entries()) {
   console.log(`\n${'━'.repeat(60)}\n[${idx + 1}/${SCENARIOS.length}] ${sc.name}\n${'━'.repeat(60)}`)
   const errCountBefore = pageErrors.length
+  // 断言作用域：只查本轮新增的助手消息。整个会话有 10 个场景，
+  // 查 .msgs 全文会把上一个场景的结论/泄漏算到本轮头上（假通过/连带失败）
+  const bubblesBefore = await page.locator('.bubble.assistant').count()
 
   await page.fill('.composer textarea', sc.prompt)
   await page.click('button.send')
@@ -93,18 +96,32 @@ for (const [idx, sc] of SCENARIOS.entries()) {
     continue
   }
 
-  // 2) 等自检结论
+  // 2) 等自检结论（只看最后一条助手消息，且必须是本轮新出的）
   let selfCheck = '未出现'
   try {
     await page.waitForFunction(
-      () => /自检通过|已自动修复|仍有 \d+ 个问题/.test(document.querySelector('.msgs')?.innerText ?? ''),
+      (n) => {
+        const bs = document.querySelectorAll('.bubble.assistant')
+        const last = bs[bs.length - 1]
+        return (
+          bs.length > n && !!last && /自检通过|已自动修复|仍有 \d+ 个问题/.test(last.innerText)
+        )
+      },
+      bubblesBefore,
       { timeout: 90000 }
     )
     selfCheck = '已出现'
   } catch {
     /* 下面统一判 */
   }
-  const chatText = await page.evaluate(() => document.querySelector('.msgs').innerText)
+  const newChat = await page.evaluate(
+    (n) =>
+      [...document.querySelectorAll('.bubble.assistant')]
+        .slice(n)
+        .map((b) => b.innerText)
+        .join('\n'),
+    bubblesBefore
+  )
   check(sc.name, '生成完成', true, clarified ? '（经一轮澄清）' : '')
   check(sc.name, '自检结论出现', selfCheck === '已出现', selfCheck)
 
@@ -137,12 +154,12 @@ for (const [idx, sc] of SCENARIOS.entries()) {
   const errBar = await page.evaluate(() => document.querySelector('.frame-errors')?.innerText ?? '')
   check(sc.name, '没有假报错（未知错误）', !errBar.includes('未知错误'), errBar.slice(0, 60) || '无报错条')
 
-  // 5) 无 JSON 泄漏
+  // 5) 无 JSON 泄漏（同样只查本轮新增的助手消息）
   check(
     sc.name,
     '聊天区无 JSON 泄漏',
-    !/```json|"intent"\s*:|"plan"\s*:/.test(chatText),
-    chatText.match(/"intent"\s*:\s*"\w+"/)?.[0] ?? ''
+    !/```json|"intent"\s*:|"plan"\s*:/.test(newChat),
+    newChat.match(/"intent"\s*:\s*"\w+"/)?.[0] ?? ''
   )
 
   // 6) 页面无 TODO/lorem 占位

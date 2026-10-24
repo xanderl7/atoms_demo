@@ -116,7 +116,7 @@ iframe 的 error 事件用 capture 阶段监听时会收到三种东西，混在
 ```
 npm run verify  ──▶ typecheck（tsc strict，app/node 分层）
                  ──▶ lint（eslint，typescript-eslint + react-hooks v7）
-                 ──▶ test（vitest 82 项：纯逻辑全覆盖）
+                 ──▶ test（vitest 93 项：纯逻辑全覆盖）
                  ──▶ build（tsc 通过才构建）
 
 npm run test:e2e ──▶ 20 个 Playwright 脚本：真实生成/澄清/修改/回退/
