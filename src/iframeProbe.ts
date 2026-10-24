@@ -47,22 +47,37 @@ export function injectScript(html: string, script: string): string {
 }
 
 /**
- * 注入到 iframe 里的探针。
+ * 注入到 iframe 里的探针（纯 JS 源码，不带 <script> 包裹）。
+ * 单独导出是为了单测：测试里可以用桩对象 eval 这段代码，
+ * 验证"JS 错误报、script 解析失败报、图片加载失败不报"的分类逻辑。
+ *
  * 注意：这段代码本身不能有语法错误，否则会把整个页面搞挂。
  */
-const ERROR_PROBE = `<script>(function(){
+export const ERROR_PROBE_SOURCE = `(function(){
 var send=function(kind,msg,extra){
   try{
     parent.postMessage({__atomsProbe:1,kind:kind,message:String(msg),extra:extra||null},'*');
   }catch(e){}
 };
 window.addEventListener('error',function(e){
-  // 【只报 JS 运行时错误】。
-  // 资源加载失败（图片挂了、CDN 被墙、字体超时）也会走这条 capture 监听器，
-  // 但那种事件的 target 是 <img>/<script> 元素、message 是空的 ——
-  // 报上去只会显示成"未知错误"，纯误导用户。
-  // 判据：JS 错误的 target 是 window，资源错误的 target 是元素。
-  if (!e || e.target !== window) return;
+  if (!e) return;
+  // target 不是 window 的情况分两种，必须区别对待：
+  //
+  // ① target 是 <script> 元素 = 【JS 解析失败】（语法错误）。
+  //    这种错误的 message 是空的，以前被当成"资源错误"一刀切滤掉 ——
+  //    结果页面脚本整体报废、交互全死，预览区却一声不吭，
+  //    用户只看到"点了没反应"，我们这边也不知道该修什么。
+  //    它是真 bug，必须报。
+  //
+  // ② target 是 <img>/<link> 等 = 资源加载失败（图片挂了、CDN 被墙）。
+  //    那不是 JS 错误，报上去只会显示成"未知错误"，纯误导用户，滤掉。
+  var t=e.target;
+  if(t&&t!==window){
+    if(t.tagName==='SCRIPT'){
+      send('error','页面内的 <script> 解析失败（JS 有语法错误，整个脚本都不会执行）',{source:t.src||'（内联脚本）'});
+    }
+    return;
+  }
   if (!e.message) return;
   send('error',e.message,{source:e.filename,line:e.lineno,stack:e.error&&e.error.stack});
 },true);
@@ -91,7 +106,10 @@ function toast(text){
 window.alert=function(msg){ toast(msg); };
 window.confirm=function(msg){ toast(msg==null?'':msg+'（已自动确认）'); return true; };
 window.prompt=function(msg,def){ toast(msg==null?'':msg); return def==null?'':def; };
-})();<\/script>`
+})();`
+
+/** 把探针包成 <script> 注入页面 */
+export const ERROR_PROBE = `<script>${ERROR_PROBE_SOURCE}</script>`
 
 /**
  * 把探针插进 HTML（位置安全，不会触发怪异模式）
@@ -105,14 +123,16 @@ export function withProbe(html: string): string {
  *
  * resetKey：换版本 / 刷新预览时变化的值。变化就清空旧错误 ——
  * 否则上一页的错误会一直挂在预览区，用户看到的是不存在的"运行时问题"。
+ *
+ * 清空用「渲染期派生」而不是 useEffect 里 setState：resetKey 变了，
+ * 本次渲染直接算出空列表，旧错误自然消失，不触发二次渲染。
  */
 export function useIframeErrors(resetKey?: number | string): IframeError[] {
-  const [errors, setErrors] = useState<IframeError[]>([])
-
-  // 换版本就清空。旧 iframe 会被卸载，它的错误不该再算在新版头上
-  useEffect(() => {
-    setErrors([])
-  }, [resetKey])
+  const [state, setState] = useState<{ key: number | string | undefined; items: IframeError[] }>(
+    { key: resetKey, items: [] }
+  )
+  // resetKey 变了 → 旧作废，直接当空列表用
+  const errors = state.key === resetKey ? state.items : []
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -127,16 +147,17 @@ export function useIframeErrors(resetKey?: number | string): IframeError[] {
         kind: d.kind === 'info' ? 'info' : 'error',
       }
       // 同一个错误只报一次，避免刷屏
-      setErrors((prev) => {
-        if (prev.some((x) => x.message === item.message && Math.abs(x.at - item.at) < 3000)) {
-          return prev
+      setState((prev) => {
+        const base = prev.key === resetKey ? prev.items : []
+        if (base.some((x) => x.message === item.message && Math.abs(x.at - item.at) < 3000)) {
+          return { key: resetKey, items: base }
         }
-        return [...prev, item].slice(-10)
+        return { key: resetKey, items: [...base, item].slice(-10) }
       })
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [])
+  }, [resetKey])
 
   return errors
 }

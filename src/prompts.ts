@@ -200,13 +200,19 @@ function toIntent(s?: string): RouterResult['intent'] {
     : 'build'
 }
 
-function normalizeRouter(o: any): RouterResult {
+function normalizeRouter(o: unknown): RouterResult {
+  const r = (o ?? {}) as {
+    intent?: unknown
+    reply?: unknown
+    plan?: unknown
+    options?: unknown
+  }
   return {
-    intent: toIntent(o?.intent),
-    reply: typeof o?.reply === 'string' ? o.reply : '',
-    plan: typeof o?.plan === 'string' ? o.plan : '',
-    options: Array.isArray(o?.options)
-      ? o.options.filter((x: unknown) => typeof x === 'string').slice(0, 4)
+    intent: toIntent(typeof r.intent === 'string' ? r.intent : undefined),
+    reply: typeof r.reply === 'string' ? r.reply : '',
+    plan: typeof r.plan === 'string' ? r.plan : '',
+    options: Array.isArray(r.options)
+      ? r.options.filter((x: unknown): x is string => typeof x === 'string').slice(0, 4)
       : [],
   }
 }
@@ -493,4 +499,53 @@ export function extractHtml(raw: string): string {
   if (fenced) return fenced[1].trim()
   const i = raw.search(/<!doctype html|<html/i)
   return i >= 0 ? raw.slice(i).trim() : raw.trim()
+}
+
+/**
+ * 自检修复专用提示词。
+ *
+ * 触发时机：每次生成/修改完新版本后，系统会自动跑一遍自检
+ * （静态检查 + iframe 里真实的运行时错误）。发现问题就带着
+ * 「完整代码 + 问题清单」来找模型修 —— 用户什么都没做，页面已经修好了。
+ *
+ * 关键约束：只修错误，别顺手重构。模型一"发挥"就会把好的部分也改坏。
+ */
+export const SYSTEM_FIX = `你是前端修复工程师。下面是一个单文件 HTML 网页，以及它被检查出来的问题清单。
+你的任务：修好清单里的每一个问题，输出修复后的完整 HTML。
+
+# 硬性规则
+1. 【只修清单里的问题】。不许改无关的样式、结构、文案 —— 用户没提的一律保持原样。
+2. 保持单文件：CSS 在 <style>，JS 在 <script>，原生 DOM API，不引本地文件。
+3. 输出也只允许一个 \`\`\`html 代码块，围栏外禁止有任何文字。
+
+# 高频根因（按出现频率排序，优先往这些方向上查）
+1. JS 语法错误 / <script> 没闭合 → 整个脚本不执行，页面交互全死
+2. 脚本在 DOMContentLoaded 之外直接 document.getElementById 拿元素 → 元素不存在直接抛错，
+   后面的逻辑全部不执行。取到元素先 if (!el) return;
+3. 重复 id → getElementById 只拿到第一个，另一个元素的事件绑不上
+4. 事件没绑定 / 绑错了选择器 → 按钮"点了没反应"
+5. 表单提交刷新页面 → 必须 e.preventDefault()，反馈用页面内提示条
+6. HTML 标签没闭合 → 布局错乱
+
+# 输出格式
+只输出一个 \`\`\`html 代码块。`
+
+export interface FixIssue {
+  message: string
+  line?: number
+}
+
+export function buildFixMessages(code: string, issues: FixIssue[]) {
+  const list = issues
+    .map((i) => `- ${i.message}${i.line ? `（第 ${i.line} 行）` : ''}`)
+    .join('\n')
+  return [
+    msg('system', SYSTEM_FIX),
+    msg(
+      'user',
+      `检查出来的问题（共 ${issues.length} 个）：\n${list}\n\n当前完整代码：\n\`\`\`html\n${compressCode(
+        code
+      )}\n\`\`\``
+    ),
+  ]
 }

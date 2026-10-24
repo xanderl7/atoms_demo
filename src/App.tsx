@@ -8,7 +8,6 @@ import type { AppVersion, Message, Step } from './types'
 import { loadConfig, saveConfig, type LLMConfig } from './config'
 import { chat, chatStream } from './llm'
 import {
-  SYSTEM_ROUTER,
   parseRouter,
   buildRouterMessages,
   buildCodeMessages,
@@ -26,10 +25,11 @@ import {
   tryLocalPatch,
 } from './patcher'
 import { log } from './logger'
-import { useIframeErrors, type IframeError } from './iframeProbe'
+import { useIframeErrors } from './iframeProbe'
 import { describeLimits, renderLimits } from './limits'
 import { detectUnsupported, renderUnsupported } from './unsupported'
 import { detectRefuse, renderRefuse } from './refuse'
+import { useAutoFix } from './useAutoFix'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
@@ -102,7 +102,7 @@ const mkSteps = (): Step[] => STEP_LABELS.map((s) => ({ ...s, status: 'pending' 
 const doneSteps = (ids: string[]): Step[] =>
   STEP_LABELS.filter((s) => ids.includes(s.id)).map((s) => ({ ...s, status: 'done' }))
 
-const isAbort = (e: any) => e?.name === 'AbortError'
+const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'AbortError'
 
 /**
  * 用户说"就按你默认的来"这类话。
@@ -175,16 +175,65 @@ export default function App() {
   const [errOpen, setErrOpen] = useState(false)
   /** 是否已经问过「这是谁的页面」。问过一次就给过跳过权，不再追问 */
   const identityAskedRef = useRef(false)
+  /** 当前这轮生成对应的助手消息 id —— 自检修复的过程汇报写进这条消息 */
+  const genMsgRef = useRef<string | null>(null)
 
-  // 生成时每秒 +1，让人看到「在跑」而不是「卡住」
+  // 生成时每秒 +1，让人看到「在跑」而不是「卡住」。
+  // busy 是内部状态变化（不是 prop），React 的"渲染期重置 state"模式不适用；
+  // 而秒表必须在计时开始那一刻归零，晚一个 tick 用户就会看到从旧值往上跳。
   useEffect(() => {
     if (!busy) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setElapsed(0)
     const t = setInterval(() => setElapsed((e) => e + 1), 1000)
     return () => clearInterval(t)
   }, [busy])
 
   const current = versions[currentIdx]
+
+  // ── 自检 + 自动修复闭环 ────────────────────────────────
+  //
+  // 生成/修改完不是终点。页面在 iframe 里跑挂了（JS 语法错误、事件没绑上、
+  // 重复 id…），用户在预览里只看到"点了没反应"，根本不知道该说什么。
+  // 所以每次提交新版本后自动跑一轮：静态检查 → 等 iframe 加载收集真实
+  // 运行时错误 → 有问题直接回喂模型修（最多 2 轮）→ 修不完如实告知。
+  const autoFix = useAutoFix({
+    cfg,
+    current,
+    frameErrors,
+    busy,
+    commit: (code) => {
+      setVersions((p) => [
+        ...p,
+        {
+          id: uid(),
+          prompt: `（自检自动修复）${current?.prompt ?? ''}`.trim(),
+          plan: current?.plan,
+          code,
+          createdAt: Date.now(),
+        },
+      ])
+      setCurrentIdx((i) => i + 1)
+      setReloadKey((k) => k + 1)
+    },
+    report: (text) => {
+      const id = genMsgRef.current
+      if (!id) return
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, content: m.content + text } : m))
+      )
+    },
+    setBusy,
+    abortRef,
+  })
+
+  /** 提交一个新版本，并 arm 自检闭环（回退/切版本不 arm —— 那是历史版本，不重新检） */
+  const commitVersion = (code: string, prompt: string, plan?: string) => {
+    setVersions((p) => [...p, { id: uid(), prompt, plan, code, createdAt: Date.now() }])
+    setCurrentIdx((i) => i + 1)
+    setReloadKey((k) => k + 1)
+    autoFix.arm()
+  }
 
   const patchMsg = (id: string, patch: Partial<Message>) =>
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)))
@@ -376,6 +425,7 @@ export default function App() {
     }
 
     const botId = uid()
+    genMsgRef.current = botId
     setMessages((p) => [...p, { id: botId, role: 'assistant', content: '', steps: mkSteps() }])
 
     try {
@@ -500,19 +550,13 @@ export default function App() {
       // ---- 局部修改：不重发全文，只发相关区块 ----
       if (r.intent === 'patch' && current) {
         setStep(botId, 'code', 'running')
-        const t2 = Date.now()
 
         // 三级降级：本地规则 → 定位+补丁 → 整篇重写
         // 每一级都比上一级贵，所以从最便宜的开始试
         const local = tryLocalPatch(enriched, current.code)
         if (local) {
           log.info('patch', `本地规则命中，0 次 LLM 调用`, { note: local.note })
-          setVersions((p) => [
-            ...p,
-            { id: uid(), prompt: enriched, plan, code: local.html, createdAt: Date.now() },
-          ])
-          setCurrentIdx((i) => i + 1)
-          setReloadKey((k) => k + 1)
+          commitVersion(local.html, enriched, plan)
           setStep(botId, 'code', 'done')
           patchMsg(botId, {
             content: `${plan}\n\n${local.note}\n\n耗时 ${Math.round((Date.now() - t0) / 1000)}s，右侧已更新。`,
@@ -557,12 +601,7 @@ export default function App() {
                 error: res.error,
               })
               if (res.ok) {
-                setVersions((pv) => [
-                  ...pv,
-                  { id: uid(), prompt: enriched, plan, code: res.html, createdAt: Date.now() },
-                ])
-                setCurrentIdx((i) => i + 1)
-                setReloadKey((k) => k + 1)
+                commitVersion(res.html, enriched, plan)
                 setStep(botId, 'code', 'done')
                 patchMsg(botId, {
                   content: `${plan}\n\n${p.summary || '已局部修改'}（改了 ${res.applied} 处，耗时 ${Math.round(
@@ -611,9 +650,7 @@ export default function App() {
         throw new Error(`模型没返回可用代码（长度 ${code.length}），原始返回：${rawCode.slice(0, 200)}`)
       }
 
-      setVersions((p) => [...p, { id: uid(), prompt: enriched, plan, code, createdAt: Date.now() }])
-      setCurrentIdx((i) => i + 1)
-      setReloadKey((k) => k + 1)
+      commitVersion(code, enriched, plan)
       setStep(botId, 'code', 'done')
 
       // 把「我做了什么 / 我没做什么 / 你后续怎么改」讲清楚。
@@ -625,7 +662,8 @@ export default function App() {
           `${plan}\n\n已生成 ${code.length} 字符（耗时 ${Math.round((Date.now() - t0) / 1000)}s），右侧可预览。` +
           (limits ? `\n${renderLimits(limits)}` : ''),
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const err = (e ?? {}) as { message?: string; stack?: string }
       if (isAbort(e)) {
         log.warn('abort', '用户中断了生成')
         patchMsg(botId, {
@@ -633,13 +671,13 @@ export default function App() {
           steps: mkSteps().map((s) => ({ ...s, status: 'error' as const })),
         })
       } else {
-        log.error('error', `生成失败：${e.message}`, { stack: e.stack?.slice(0, 300) })
+        log.error('error', `生成失败：${err.message}`, { stack: err.stack?.slice(0, 300) })
         setMessages((p) =>
           p.map((m) =>
             m.id === botId
               ? {
                   ...m,
-                  content: `生成失败：${e.message}\n\n右上角「日志」里有完整过程。`,
+                  content: `生成失败：${err.message}\n\n右上角「日志」里有完整过程。`,
                   steps: m.steps?.map((s) => ({ ...s, status: 'error' as const })),
                 }
               : m

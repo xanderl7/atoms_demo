@@ -19,8 +19,9 @@ export default function Settings({ value, onSave, onClose }: Props) {
       const t0 = Date.now()
       const r = await chat(c, [{ role: 'user', content: '只回复两个字：连通' }], 0.3)
       setTest(`✅ 连通（${((Date.now() - t0) / 1000).toFixed(1)}s）：${r.slice(0, 20)}`)
-    } catch (e: any) {
-      setTest(`❌ ${e.message}`)
+    } catch (e: unknown) {
+      const err = (e ?? {}) as { message?: string }
+      setTest(`❌ ${err.message ?? String(e)}`)
     }
   }
 
@@ -51,7 +52,7 @@ export default function Settings({ value, onSave, onClose }: Props) {
           思维链
           <select
             value={c.thinking}
-            onChange={(e) => setC({ ...c, thinking: e.target.value as any })}
+            onChange={(e) => setC({ ...c, thinking: e.target.value as LLMConfig['thinking'] })}
           >
             <option value="disabled">关闭（快 3-4 倍，推荐）</option>
             <option value="enabled">开启（复杂需求可能更准）</option>

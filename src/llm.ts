@@ -38,8 +38,8 @@ async function call(
         body: JSON.stringify(p),
         signal,
       })
-    } catch (e: any) {
-      if (e?.name === 'AbortError') throw e // 用户主动中断，原样往上抛
+    } catch (e: unknown) {
+      if ((e as { name?: string } | null)?.name === 'AbortError') throw e // 用户主动中断，原样往上抛
       // fetch 本身抛错 = 请求根本没发出去：跨域被拦 / 代理没起 / 断网
       throw new Error(
         '请求发不出去。检查：① baseURL 是否为 /zhipu ② npm run dev 是否在运行 ③ 网络'
@@ -55,7 +55,8 @@ async function call(
 
     // 模型不支持关思考（glm-5.x 报 1210）：去掉参数重试
     if (payload.thinking && /1210|不支持关闭思考/.test(text)) {
-      const { thinking, ...rest } = payload
+      const rest = { ...payload }
+      delete rest.thinking
       return send(rest)
     }
 

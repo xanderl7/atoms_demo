@@ -137,16 +137,21 @@ export interface ApplyResult {
   error?: string
 }
 
-const isOp = (o: any): o is PatchOp =>
-  !!o &&
-  typeof o.type === 'string' &&
-  (o.type === 'replace_text'
-    ? typeof o.from === 'string' && o.from.length > 0
-    : o.type === 'replace_block' || o.type === 'insert_after'
-      ? typeof o.block === 'string' && typeof o.content === 'string'
-      : o.type === 'remove_block'
-        ? typeof o.block === 'string'
-        : false)
+const isOp = (o: unknown): o is PatchOp => {
+  if (!o || typeof o !== 'object') return false
+  const t = o as Record<string, unknown>
+  if (typeof t.type !== 'string') return false
+  if (t.type === 'replace_text') {
+    // from 和 to 都必须是字符串。少 to 的补丁放过去，
+    // applyOps 会 join(undefined)，把页面文本变成 "undefined" —— 实测踩过。
+    return typeof t.from === 'string' && t.from.length > 0 && typeof t.to === 'string'
+  }
+  if (t.type === 'replace_block' || t.type === 'insert_after') {
+    return typeof t.block === 'string' && typeof t.content === 'string'
+  }
+  if (t.type === 'remove_block') return typeof t.block === 'string'
+  return false
+}
 
 /**
  * 执行补丁。全部校验通过才动手 —— 宁可不做，不能改坏。
@@ -175,9 +180,9 @@ export function applyOps(html: string, ops: PatchOp[], blocks: Block[]): ApplyRe
   }
 
   // 2) 块操作：从后往前切，避免前面的偏移让后面的下标失效
-  const blockOps = ops.filter((o) => o.type !== 'replace_text')
+  const blockOps = ops.filter((o): o is Exclude<PatchOp, { type: 'replace_text' }> => o.type !== 'replace_text')
   const withIdx = blockOps
-    .map((op) => ({ op, b: blocks.find((x) => x.id === (op as any).block)! }))
+    .map((op) => ({ op, b: blocks.find((x) => x.id === op.block)! }))
     .sort((x, y) => y.b.start - x.b.start)
 
   for (const { op, b } of withIdx) {
@@ -210,7 +215,7 @@ export function parsePatch(raw: string): { summary: string; ops: PatchOp[] } | n
   const json = raw.match(/\{[\s\S]*\}/)?.[0]
   if (!json) return null
 
-  let o: any = null
+  let o: { summary?: unknown; ops?: unknown } | null = null
   for (const candidate of [json, repairJson(json)]) {
     try {
       o = JSON.parse(candidate)

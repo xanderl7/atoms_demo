@@ -66,7 +66,13 @@ export function detectUnsupported(text: string): UnsupportedKind | null {
   }
 
   // 3) "把图片换成我自己的" —— 资产名词在前
-  if (REPLACE_MINE_TAIL.test(t)) return 'upload'
+  const tailM = REPLACE_MINE_TAIL.exec(t)
+  if (tailM) {
+    // 同样要排除改文字："作品标题换成我的名字" 命中的是名词在前的结构，
+    // 但用户要改的是【名字】（文字），不是要传文件。
+    const tail = t.slice(tailM.index + tailM[0].length)
+    if (!TEXT_SUFFIX.test(tail)) return 'upload'
+  }
 
   return null
 }
@@ -75,7 +81,7 @@ export function detectUnsupported(text: string): UnsupportedKind | null {
  * 生成"你自己怎么改"的引导。
  * 关键：改哪几处是从当前代码里【扫出来的】，不是模型编的。
  */
-export function renderUnsupported(kind: UnsupportedKind, code: string): string {
+export function renderUnsupported(_kind: UnsupportedKind, code: string): string {
   const limits = describeLimits(code)
   const lines: string[] = []
 

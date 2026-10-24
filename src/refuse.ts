@@ -19,13 +19,22 @@ export type RefuseKind = 'backend' | 'capability' | 'non-web'
 const BACKEND_WORDS =
   /(搭|做|写|建|搞|起|部署|上线|发布)(一个|个|套|台|下|一下)?(后端|服务端|后台服务|服务器|API|接口|接口服务|微服务|node服务|node\.js|express|spring|springboot|spring boot|django|flask|数据库|mysql|redis|mongo|mongodb|postgres|sqlite|表结构|后端逻辑|服务端逻辑)/i
 
-/** 真实功能 —— 需要真凭据/真三方，我们给不了 */
+/**
+ * 真实功能 —— 需要真凭据/真三方，我们给不了。
+ *
+ * 触发词和功能名词之间允许隔几个字：用户说的是"对接【一个真实的】微信支付"
+ * "我要【真实的】登录"——量词和"的"不该成为漏判的理由（实测踩过：
+ * 原版要求两者紧贴，这三句话全部漏判，被做成了假登录框）。
+ */
 const CAPABILITY_WORDS =
-  /(真的|真实|真正|接|对接|集成|调用|开通|绑定)(登录|注册|登陆|支付|付款|短信|邮件|邮箱验证|验证码|地图|高德|百度地图|谷歌地图|oss|对象存储|文件上传|上传文件|支付接口|微信支付|支付宝|openai|gpt|大模型|ai接口)/i
+  /(真的?|真正|接|对接|集成|调用|开通|绑定)(的)?[^。！？\n]{0,4}(登录|注册|登陆|支付|付款|短信|邮件|邮箱验证|验证码|地图|高德|百度地图|谷歌地图|oss|对象存储|文件上传|上传文件|支付接口|微信支付|支付宝|openai|gpt|大模型|ai接口)/i
 
-/** 非网页产物 —— 根本不是 HTML 页面 */
+/**
+ * 非网页产物 —— 根本不是 HTML 页面。
+ * 同样允许中间隔几个字："写一个【命令行】爬虫工具"。
+ */
 const NON_WEB_WORDS =
-  /(做|写|开发|生成|搭)(一个|个|套)?(小程序|微信小程序|app|APP|安卓|android|ios|iOS|桌面应用|桌面软件|exe|chrome插件|浏览器插件|油猴脚本|cli|命令行工具|爬虫|脚本工具)/i
+  /(做|写|开发|生成|搭)(一个|个|套|台|下|一下)?[^。！？\n]{0,4}(小程序|微信小程序|app|APP|安卓|android|ios|iOS|桌面应用|桌面软件|exe|chrome插件|浏览器插件|油猴脚本|cli|命令行工具|爬虫|脚本工具)/i
 
 export function detectRefuse(text: string): RefuseKind | null {
   const t = text.trim()
