@@ -105,8 +105,35 @@ export function staticCheck(html: string): StaticIssue[] {
     })
   }
 
+  // ⑧ jQuery 专有伪类混进原生 querySelector —— 执行到这句直接抛
+  //    SyntaxError: '...' is not a valid selector，也是交互时才炸。
+  //    模型经常下意识写 jQuery 的 :contains()/:first/:eq() 找元素。
+  //    只扫 querySelector 系函数的参数字面量（不扫全文 —— 正文文案里
+  //    可能有"类型:input"这种ASCII冒头词组，会误报）。
+  //    单/双引号分两个正则：:contains("xx") 的参数里常带另一种引号。
+  //    注意排除 :first-child/:last-child 这类合法 CSS 伪类（后面跟 -）。
+  const jqSelector = [...matchAllSelectorArgs(html)].find((sel) => JQUERY_PSEUDO.test(sel))
+  if (jqSelector) {
+    issues.push({
+      message: `querySelector 里用了 jQuery 专有的伪类「${jqSelector}」—— 原生 querySelector 不认识它，执行到这句会直接抛 SyntaxError。jQuery 写法要改成原生（如 [...document.querySelectorAll('button')].find(b => b.textContent.includes('xx'))）`,
+    })
+  }
+
   return issues
 }
+
+/** querySelector 系函数的参数字面量（单/双引号分两个正则，允许参数里带另一种引号） */
+const SELECTOR_ARG_SQ = /(?:querySelector(?:All)?|matches|closest)\(\s*'([^']*)'/g
+const SELECTOR_ARG_DQ = /(?:querySelector(?:All)?|matches|closest)\(\s*"([^"]*)"/g
+
+function* matchAllSelectorArgs(html: string): Generator<string> {
+  for (const m of html.matchAll(SELECTOR_ARG_SQ)) yield m[1]
+  for (const m of html.matchAll(SELECTOR_ARG_DQ)) yield m[1]
+}
+
+/** jQuery 专有、原生 querySelector 绝不认识的伪类（:first-child 等合法 CSS 已排除） */
+const JQUERY_PSEUDO =
+  /:(contains|parent|visible|hidden|input|button|checkbox|radio|file|image|reset|password|selected|first|last|eq|gt|lt|even|odd|animated|header)(?![-\w])/i
 
 /** getElementById('x')（裸 id）与 querySelector(All)('#x' / '.x')（带前缀）两种字面量引用 */
 const SELECTOR_REF =

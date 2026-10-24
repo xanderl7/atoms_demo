@@ -132,3 +132,48 @@ describe('staticCheck 悬空选择器（交互期 null 引用）', () => {
     expect(staticCheck(ok).some((x) => x.message.includes('querySelector 会返回 null'))).toBe(false)
   })
 })
+
+describe('staticCheck jQuery 伪类混进原生 querySelector', () => {
+  const page = (js: string) =>
+    `<!doctype html><html><head></head><body><p>正文足够长，不会触发空页面告警。</p>
+    <script>${js}</script></body></html>`
+
+  it(':contains() → 点名（variety 实测抓到的真 bug）', () => {
+    const r = staticCheck(page(`document.querySelector('button:contains("预约拍摄")').click()`))
+    expect(r.some((x) => x.message.includes('jQuery 专有的伪类'))).toBe(true)
+    expect(r.some((x) => x.message.includes(':contains'))).toBe(true)
+  })
+
+  it(':first / :eq() 等 jQuery 位置伪类 → 点名', () => {
+    expect(
+      staticCheck(page(`document.querySelector('.item:first').style.color = 'red'`)).some((x) =>
+        x.message.includes('jQuery 专有的伪类')
+      )
+    ).toBe(true)
+    expect(
+      staticCheck(page(`document.querySelectorAll('.item:eq(0)')`)).some((x) =>
+        x.message.includes('jQuery 专有的伪类')
+      )
+    ).toBe(true)
+  })
+
+  it(':first-child / :last-child 是合法 CSS → 不报', () => {
+    const r = staticCheck(page(`document.querySelector('.item:first-child').remove()`))
+    expect(r.some((x) => x.message.includes('jQuery 专有的伪类'))).toBe(false)
+  })
+
+  it(':hover/:focus/:nth-child 等合法伪类 → 不报', () => {
+    const r = staticCheck(
+      page(`document.querySelector('button:hover, li:nth-child(2), a:not(.x)')`)
+    )
+    expect(r.some((x) => x.message.includes('jQuery 专有的伪类'))).toBe(false)
+  })
+
+  it('正文文案里的"类型:input"（非选择器调用）→ 不报', () => {
+    const r = staticCheck(
+      `<!doctype html><html><body><p>填写说明：类型:input 为单行，类型:text 为多行，正文足够长。</p>
+      <script>document.querySelector('#real').textContent = 'x'</script></body></html>`
+    )
+    expect(r.some((x) => x.message.includes('jQuery 专有的伪类'))).toBe(false)
+  })
+})
