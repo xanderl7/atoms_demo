@@ -5,6 +5,8 @@ import {
   codeSkeleton,
   parseRouter,
   buildFixMessages,
+  buildCodeMessages,
+  buildRouterMessages,
   SYSTEM_FIX,
 } from '../prompts'
 
@@ -85,5 +87,48 @@ describe('parseRouter 路由 JSON 三层容错', () => {
   it('未知 intent → 兜底 build', () => {
     const r = parseRouter('{"intent":"something_else"}')
     expect(r.intent).toBe('build')
+  })
+})
+
+describe('buildCodeMessages 最初的需求（推倒重做专用）', () => {
+  it('传了 originalPrompt → 用户消息里带「最初的需求」', () => {
+    const msgs = buildCodeMessages('推倒重做，出一个全新的第三版', '- 按最初需求重做', null, '写个最简单的hello world')
+    const user = msgs[1].content
+    expect(user).toContain('推倒重做')
+    expect(user).toContain('按最初需求重做')
+    expect(user).toContain('最初的需求（这一版的出发点）')
+    expect(user).toContain('写个最简单的hello world')
+  })
+
+  it('不传 originalPrompt → 不出现这段（普通修改流程零影响）', () => {
+    const msgs = buildCodeMessages('改成绿色', '- 主色改绿', '<html>旧页面</html>')
+    expect(msgs[1].content).not.toContain('最初的需求')
+    expect(msgs[1].content).toContain('旧页面') // 普通流程照旧喂上一版
+  })
+
+  it('rebuild 场景 prevCode 传 null → 不喂上一版代码', () => {
+    const msgs = buildCodeMessages('推倒重做', '- 重做', null, 'hello world')
+    expect(msgs[1].content).not.toContain('上一版')
+    expect(msgs[1].content).not.toContain('增量修改')
+  })
+})
+
+describe('buildRouterMessages 推倒重做的锚点规则', () => {
+  it('有版本时，提示词包含「锚点是最初的需求」', () => {
+    const msgs = buildRouterMessages('推倒重做，出一个全新的第三版', true, [], '版本历史（共 2 版）')
+    expect(msgs[0].content).toContain('推倒重做的锚点是最初的需求')
+    expect(msgs[0].content).toContain('中间轮次改过的样式')
+    expect(msgs[0].content).toContain('【不要】带进新版本')
+  })
+
+  it('不满且说清了偏差 → 引导判 build 而不是 probe', () => {
+    const msgs = buildRouterMessages('完全不是hello world了', true)
+    expect(msgs[0].content).toContain('不满【且说清了偏差】')
+    expect(msgs[0].content).toContain('回到最初的需求')
+  })
+
+  it('指代不存在的版本 → 引导把选项框成"基于最初需求重做"', () => {
+    const msgs = buildRouterMessages('算了第三版', true, [], '版本历史（共 2 版）')
+    expect(msgs[0].content).toContain('基于最初需求重做一版新的')
   })
 })

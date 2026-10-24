@@ -30,7 +30,7 @@ import { describeLimits, renderLimits } from './limits'
 import { detectUnsupported, renderUnsupported } from './unsupported'
 import { detectRefuse, renderRefuse } from './refuse'
 import { useAutoFix } from './useAutoFix'
-import { isRollback, resolveVersionRef, buildVersionSummary } from './versionRef'
+import { isRollback, resolveVersionRef, buildVersionSummary, isRebuild, isDriftComplaint } from './versionRef'
 import {
   SKIP_CLARIFY_WORDS,
   ACCEPT_PLACEHOLDER_WORDS,
@@ -206,9 +206,17 @@ export default function App() {
       return
     }
 
+    // 「推倒重做 / 出一个全新的第N版」—— 创建请求，必须【先于】版本指代判断。
+    // 实测踩坑：用户说"出一个全新的第三版"（要新建），此时恰好已经存在
+    // 第三版（上一轮模型直接建的），resolveVersionRef 把"第三版"当成
+    // 指代 → 回"当前已经在第 3 版了，不用改"——用户要新做一个，系统
+    // 说你已经有了。创建意图里的版本号是在给【新版本】命名，不是指代旧版。
+    const createNew = isRebuild(text)
+
     // 「改成第二版 / 改回第2版 / 改过来吧」—— 明确指代某一版，
     // 直接在版本历史里切过去。让模型干这事它只会猜（实测踩过坑）。
-    const versionTarget = resolveVersionRef(text, versions.length, currentIdx)
+    // createNew 时跳过：那是要新建，不是要切历史。
+    const versionTarget = createNew ? null : resolveVersionRef(text, versions.length, currentIdx)
     if (versionTarget !== null) {
       // 已经停在目标版本了 —— 也要拦住，不能落到生成流程。
       // 否则用户说"改成第二版"而当前正是第 2 版时，会白白重新生成一版（70s）。
@@ -528,12 +536,33 @@ export default function App() {
       // ---- Step 3: 生成代码 ----
       setStep(botId, 'code', 'running')
       const t2 = Date.now()
+      // 推倒重做 / 结果偏离了最初需求：从【最初的需求】出发重新实现，
+      // 不拿当前页面当基础。
+      // 实测踩坑 1："推倒重做，出一个全新的第三版"被理解成"把当前（已被
+      // 改成绿色的）页面重画一遍" —— plan 继承绿色系、丢掉最初的
+      // hello world，用户看到的是一个跟原始需求无关的网页。
+      // 实测踩坑 2："你这个第三版完全不是hello world了"—— 这种偏离不满
+      // 该做的是回到最初需求重做，不是在跑偏的页面上打补丁。
+      // 所以这两类都 prevCode 传 null（不喂上一版代码），并显式带上最初需求。
+      // createNew 在进生成流程前就算好了（版本指代判断要让位给它），这里补上
+      // 偏离不满的判定。
+      const rebuild = createNew || isDriftComplaint(enriched)
+      if (rebuild) {
+        log.info('rebuild', '从最初需求出发重建，不继承当前页面', {
+          original: versions[0]?.prompt?.slice(0, 80),
+        })
+      }
       // 用流式：长连接一直有数据流动，不容易被网关掐断返回 500；
       // 顺带能实时显示进度，用户知道在跑
       let lastPaint = 0
       const rawCode = await chatStream(
         cfg,
-        buildCodeMessages(enriched, plan, current?.code ?? null),
+        buildCodeMessages(
+          enriched,
+          plan,
+          rebuild ? null : (current?.code ?? null),
+          rebuild ? versions[0]?.prompt : undefined
+        ),
         (_chunk, full) => {
           const now = Date.now()
           if (now - lastPaint > 400) {

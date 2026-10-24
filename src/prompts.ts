@@ -34,6 +34,8 @@ export const SYSTEM_ROUTER = `你是需求澄清助手。判断用户这句话�
 
 情况 5 —— 用户在【质疑】上一版结果，或表达不满（"不对""不是我要的""太丑了""答非所问""没变化""你没懂我的意思"）：
 {"intent":"probe","reply":"一句话说明你理解的偏差 + 你要问的那个最关键的问题","options":["选项A","选项B","选项C"]}
+（注意：如果用户不满【并且说清了偏差是什么】——比如"完全不是hello world了"——
+那是情况 3 build：plan 写"回到最初的需求：…"，直接改，不要反问。）
 
 情况 6 —— 用户要你【使用他上传/提供的真实素材】（"换成我的作品""用我的照片""上传我的简历""改成真图"）：
   这个产品没有上传入口，收不到文件。你【不要】反问"你能提供吗"（问了也收不到），
@@ -106,10 +108,23 @@ export function buildRouterMessages(
     parts.push(
       `注意：用户已经有一个生成好的页面，这条消息大概率是对它的修改或反馈。判定规则：
 - 明确指出要删掉/去掉/加上/改哪一处（改颜色、改文案、删某个区块、加个按钮）→ patch
-- 表达不满但没说要怎么改（"不对""太丑了""答非所问""没变化"）→ probe，把问题抛回去问，别道歉
+- 表达不满但没说要怎么改（"不对""太丑了""没变化"）→ probe，把问题抛回去问，别道歉
+- 不满【且说清了偏差】（"完全不是hello world了""根本不是我想要的效果"）
+  → build，plan 写"回到最初的需求：…"，从最初需求重新实现，不要反问"你要什么样的"
 - 明确要求重做某一部分或整体换风格 → build
 - 明确闲聊（你好、你是谁、谢谢）→ chat
-plan 直接写「要改成什么」，不要反问用户、不要问"你想改哪个"。`
+plan 直接写「要改成什么」，不要反问用户、不要问"你想改哪个"。
+
+【推倒重做的锚点是最初的需求，不是当前页面】
+用户说"推倒重做/重新做一版/出一个全新的第N版/从头做/从零开始"时 → 判 build，
+并且 plan 必须从【最初的需求】出发：用户最开始要做的是什么、页面上要有什么，
+原样写进 plan。中间轮次改过的样式（换过的颜色、调过的布局）【不要】带进新版本，
+除非用户明确说"保留当前的配色/风格"。
+最常见的错：把"当前页面长什么样"当成重做基础 —— 比如中间轮把页面改成了绿色，
+重做时 plan 里写"采用绿色系"，却把最初需求要的内容整个丢掉。
+用户指代一个不存在的版本（"第三版"但只有两版）时，reply 要说清现状，
+并把选项框成"基于最初需求重做一版新的"或"改回某一版"，不要让用户以为
+"重做"就是拿当前页面改。`
     )
   }
   parts.push(
@@ -134,7 +149,7 @@ plan 直接写「要改成什么」，不要反问用户、不要问"你想改�
   // 甚至把"版"理解成"页面数量"。至少要让知道有几版、每版是什么。
   if (versionSummary) {
     parts.push(
-      `${versionSummary}\n\n如果用户指代某一版（"改成第二版""改回刚才那版"），\n你要在 reply 里说明白【那是什么】，不要回答"我没有第二版的信息"。`
+      `${versionSummary}\n\n如果用户指代某一版（"改成第二版""改回刚才那版"），\n你要在 reply 里说明白【那是什么】，不要回答"我没有第二版的信息"。\n如果用户指代的版本不存在（只有两版但他说"第三版"），\nreply 说清现状，options 框成"基于最初需求重做一版新的"或"改回某一版"。`
     )
   }
   const suffix = parts.length ? `\n\n${parts.join('\n\n')}` : ''
@@ -394,9 +409,27 @@ export function codeSkeleton(code: string): string {
   return blocks.map((b) => `<${b.tag}> ${b.title} (${b.len}字符)`).join('\n')
 }
 
-export function buildCodeMessages(userPrompt: string, plan?: string, prevCode?: string | null) {
+/**
+ * 组装代码生成消息。
+ *
+ * originalPrompt：整个会话【最初的需求】（第 1 版的用户原话）。
+ * 只有"推倒重做"时才传 —— 这一版要从最初需求出发重新实现，
+ * 不能继承中间轮改过的样式；调用方同时会把 prevCode 传 null。
+ */
+export function buildCodeMessages(
+  userPrompt: string,
+  plan?: string,
+  prevCode?: string | null,
+  originalPrompt?: string
+) {
   const parts = [`用户需求：${userPrompt}`]
   if (plan) parts.push(`需求拆解：\n${plan}`)
+  if (originalPrompt) {
+    parts.push(
+      `【最初的需求（这一版的出发点）】${originalPrompt}\n后面所有的修改都是它的衍生。用户要的是推倒重做：从最初的需求出发重新实现，` +
+        `不要把中间轮次改过的样式/内容当基础，除非需求拆解里明确说要保留。`
+    )
+  }
   if (prevCode) {
     const compressed = compressCode(prevCode)
     if (compressed.length <= CONTEXT_BUDGET) {

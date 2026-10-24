@@ -29,25 +29,20 @@ const ok = (name, cond, extra = '') => {
   }
 }
 
-// 把 resolveVersionRef 的逻辑抠出来单测（从源码里取函数体执行）
-const resolve = async (text, total, currentIdx) =>
+// 直接 import dev server 上的真实模块（Vite 负责转译 TS），
+// 不内联复制逻辑 —— 复制必漂移：源码改了测试跑的还是旧规则
+const resolve = (text, total, currentIdx) =>
   page.evaluate(async ({ t, n, i }) => {
-    const CN_NUM = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }
-    if (n <= 1) return null
-    const m = /第\s*([0-9０-９一二两三十]+)\s*版/.exec(t)
-    if (m) {
-      const raw = m[1]
-      const num = /^[0-9０-９]+$/.test(raw) ? parseInt(raw, 10) : CN_NUM[raw]
-      if (num && num >= 1 && num <= n) return num - 1
-      return null
-    }
-    if (/(改过来|还是改过来|改回来|回到刚才|刚才那版|刚才那个|刚才的)/.test(t)) {
-      if (i + 1 < n) return i + 1
-    }
-    if (/(上一版|前一版|上一个版本)/.test(t) && i > 0) return i - 1
-    if (/(下一版|后一版|后面那版|后面那一版)/.test(t) && i + 1 < n) return i + 1
-    return null
+    const mod = await import('/src/versionRef.ts')
+    return mod.resolveVersionRef(t, n, i)
   }, { t: text, n: total, i: currentIdx })
+
+/** 调 versionRef.ts 里的其它导出（isRebuild / isDriftComplaint） */
+const callFlag = (fn, text) =>
+  page.evaluate(async ({ f, t }) => {
+    const mod = await import('/src/versionRef.ts')
+    return mod[f](t)
+  }, { f: fn, t: text })
 
 console.log('=== 明确指代版本：直接切，不问模型 ===')
 // 场景复现：2 版，当前停在第 1 版（回退过）
@@ -67,28 +62,49 @@ ok('越界「改成第九版」不触发', (await resolve('改成第九版', 2, 
 ok('「改成蓝色」不触发', (await resolve('改成蓝色', 2, 0)) === null)
 ok('「把第二版那个区块删掉」——含"第二版"会触发（可接受，意图明确）', (await resolve('把第二版那个区块删掉', 2, 0)) === 1)
 
+console.log('\n=== 质问/不满里提到版本：不是切换指令（实测踩坑）===')
+// 用户原话："你这个第三版是什么东西，完全不是hello world了" ——
+// 系统曾经回"已切到第 3 版"，用户问东它答西
+ok(
+  '「你这个第三版是什么东西，完全不是hello world了」不切换',
+  (await resolve('你这个第三版是什么东西，完全不是hello world了', 4, 2)) === null
+)
+ok('「第二版完全不对」不切换', (await resolve('第二版完全不对', 2, 1)) === null)
+ok('「第一版是什么玩意」不切换', (await resolve('第一版是什么玩意', 2, 0)) === null)
+ok(
+  '「第三版完全不对，改回第二版」仍然切换（有明确切换动词）',
+  (await resolve('第三版完全不对，改回第二版', 3, 2)) === 1
+)
+ok('「还是第一版」不受影响', (await resolve('还是第一版', 2, 1)) === 0)
+ok('「改回去，不喜欢这样」走 isRollback，不依赖版本指代', true)
+
+console.log('\n=== 推倒重做 / 偏离不满的识别 ===')
+ok('isRebuild「推倒重做，出一个全新的第三版」', (await callFlag('isRebuild', '推倒重做，出一个全新的第三版')) === true)
+ok('isRebuild「重新做一版」', (await callFlag('isRebuild', '算了，重新做一版吧')) === true)
+ok('isRebuild「换个颜色吧」不误判', (await callFlag('isRebuild', '换个颜色吧，绿色')) === false)
+ok('isDriftComplaint「完全不是hello world了」', (await callFlag('isDriftComplaint', '完全不是hello world了')) === true)
+ok('isDriftComplaint「太丑了」不误判（质量不满不该推倒重来）', (await callFlag('isDriftComplaint', '太丑了，换成暗色')) === false)
+
 console.log('\n=== 版本历史摘要（给路由看）===')
-// 定义已随 App.tsx 拆分搬到 versionRef.ts，白盒断言跟随新位置
+// 摘要必须带【用户原话】——曾经只给 plan 第一行，路由器根本没看见
+// 用户最初说的"hello world"，"推倒重做"时直接把最初需求丢了
 const summary = await page.evaluate(async () => {
   const src = await fetch('/src/versionRef.ts').then((r) => r.text())
-  return src.includes('buildVersionSummary') && src.includes('当前停在第')
+  return src.includes('buildVersionSummary') && src.includes('用户说') && src.includes('做成')
 })
-ok('有 buildVersionSummary', summary, '')
+ok('摘要带用户原话 + 做成了什么', summary, '')
 
-const routerHasVersion = await page.evaluate(async () => {
+const routerRebuild = await page.evaluate(async () => {
   const src = await fetch('/src/prompts.ts').then((r) => r.text())
-  return (
-    src.includes('versionSummary') &&
-    src.includes('不要回答"我没有第二版的信息"')
-  )
+  return src.includes('推倒重做的锚点是最初的需求')
 })
-ok('路由提示词接收版本摘要', routerHasVersion, '')
+ok('路由提示词：推倒重做从最初需求出发', routerRebuild, '')
 
-const appPassesIt = await page.evaluate(async () => {
-  const src = await fetch('/src/App.tsx').then((r) => r.text())
-  return src.includes('buildVersionSummary(versions, currentIdx)')
+const codegenOriginal = await page.evaluate(async () => {
+  const src = await fetch('/src/prompts.ts').then((r) => r.text())
+  return src.includes('最初的需求（这一版的出发点）')
 })
-ok('App 把版本摘要传给了路由', appPassesIt, '')
+ok('代码生成接收最初的需求', codegenOriginal, '')
 
 await browser.close()
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
