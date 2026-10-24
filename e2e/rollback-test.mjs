@@ -79,8 +79,16 @@ check('回滚是秒回（没调 LLM）', elapsed < 3000, `${elapsed}ms`)
 check('回滚后代码 == v1', v3 === v1, `v3 ${v3.length} / v1 ${v1.length}`)
 check('回滚后代码 != v2', v3 !== v2)
 
-// 步骤条不应出现（根本没走生成流程）
-check('回滚没有出现步骤条', (await page.locator('.step').count()) === 0)
+// 回滚消息自己不该带步骤条（根本没走生成流程）。
+// 注意：不能数全页 .step —— 历史消息的步骤条本来就该留在那里，
+// 要断言的是【回滚这一条消息】没有步骤条
+const rollbackSteps = await page
+  .locator('.bubble.assistant')
+  .last()
+  .locator('xpath=..')
+  .locator('.steps')
+  .count()
+check('回滚没有出现步骤条', rollbackSteps === 0)
 
 // ---- 同义说法 ----
 await sendAndWait('撤销', 20000).catch(() => {})

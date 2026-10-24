@@ -13,7 +13,7 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
-const KEY = fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()
+const KEY = (process.env.ZHIPU_API_KEY || '').trim() || fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })

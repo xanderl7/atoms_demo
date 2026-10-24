@@ -13,7 +13,7 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
-const KEY = fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()
+const KEY = (process.env.ZHIPU_API_KEY || '').trim() || fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()
 
 const browser = await chromium.launch()
 // 视口压扁：聊天区只剩 ~280px 高，几条真实消息就能溢出，不用往 DOM 里塞假节点

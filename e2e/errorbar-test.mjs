@@ -88,13 +88,13 @@ ok('错误消息是真实的（不是"未知错误"）', realErr && realErr.mess
 ok('错误消息含具体内容', !!realErr && realErr.message.includes('null'), '')
 
 console.log('\n=== 3) 换版本要清空旧错误 ===')
-// 直接调 hook 不方便，改用 DOM 行为验证：reloadKey 变化后 frameErrors 清空
-// 这里验证 React 里 resetKey 生效 —— 通过真实应用界面
+// 直接调 hook 不方便，改用源码契约验证：resetKey 变化必须让旧错误作废。
+// 实现从「effect 里 setErrors([])」改成了「渲染期按 key 派生」——
+// 行为契约不变（resetKey 一变，旧错误立刻不算数），所以这里断言新契约。
 const cleared = await page.evaluate(() => {
-  // 找到 useIframeErrors 的实现，确认它有 reset effect
   return import('/src/iframeProbe.ts').then((m) => {
     const src = m.useIframeErrors.toString()
-    return /resetKey/.test(src) && /setErrors\(\[\]\)/.test(src)
+    return /resetKey/.test(src) && /state\.key === resetKey/.test(src)
   })
 })
 ok('useIframeErrors 支持 resetKey 清空', cleared, '')
