@@ -80,7 +80,7 @@ atoms-demo/
 │   ├── prompts.ts         所有 LLM 提示词 + 路由 JSON 三层容错解析（调效果只改这里）
 │   ├── llm.ts             OpenAI 兼容客户端：流式/中断/5xx 重试/1210 自动降级
 │   ├── useAutoFix.ts      自检+自动修复闭环（hook）
-│   ├── verify.ts          静态自检：script 配对/HTML 解析/重复 id/空页面/form action/TODO/悬空选择器/jQuery 伪类
+│   ├── verify.ts          静态自检：script 配对/HTML 解析/重复 id/空页面/form action/表单提交/悬空选择器/jQuery 伪类
 │   ├── patcher.ts         局部编辑：切区块/补丁执行/本地规则快改
 │   ├── iframeProbe.ts     iframe 错误捕获桥 + 假弹框消除（探针源码 + 主应用监听）
 │   ├── refuse.ts          页面之外的请求：本地规则直接拒绝
@@ -92,7 +92,7 @@ atoms-demo/
 │   ├── config.ts          LLM 配置存取（localStorage）
 │   ├── types.ts           核心数据结构
 │   └── components/        ChatPanel / PreviewPane / CodePane / Settings / LogPanel
-├── src/__tests__/         单元测试（9 个文件 93 项）
+├── src/__tests__/         单元测试（9 个文件 101 项）
 ├── e2e/                   Playwright 端到端（20 个脚本 + run-all runner）
 ├── scripts/watchdog.mjs   看门狗：每分钟检查 agent 心跳与 dev server
 ├── vite.config.ts         Vite 配置 + /zhipu 跨域代理
@@ -162,7 +162,7 @@ atoms-demo/
 ## 测试
 
 ```bash
-npm test              # 单元测试：93 项 / 9 文件
+npm test              # 单元测试：101 项 / 9 文件
 npm run test:e2e      # 端到端：20 个 Playwright 脚本，顺序跑完出汇总
 npm run verify        # typecheck + lint + test + build 一键全跑
 ```
