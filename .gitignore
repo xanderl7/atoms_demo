@@ -13,3 +13,6 @@ npm-debug.log*
 .heartbeat
 scripts/watchdog.log
 scripts/STALL_ALERT
+
+# e2e 批量运行的完整输出日志（复盘用，不进 git）
+e2e/logs/

@@ -85,13 +85,15 @@ atoms-demo/
 │   ├── iframeProbe.ts     iframe 错误捕获桥 + 假弹框消除（探针源码 + 主应用监听）
 │   ├── refuse.ts          页面之外的请求：本地规则直接拒绝
 │   ├── unsupported.ts     收不到文件的请求：引导用户自己改，绝不编造
+│   ├── versionRef.ts      版本指代纯规则：「改成第2版/回滚/撤销」→ 直接切版本，不问模型
+│   ├── clarify.ts         需求澄清纯规则：跳过词表/身份追问/plan 反问检测
 │   ├── limits.ts          边界声明：扫代码生成"我做了什么/没做什么/你怎么改"
 │   ├── logger.ts          日志系统（右上角「日志」可看全程）
 │   ├── config.ts          LLM 配置存取（localStorage）
 │   ├── types.ts           核心数据结构
 │   └── components/        ChatPanel / PreviewPane / CodePane / Settings / LogPanel
 ├── src/__tests__/         单元测试（9 个文件 82 项）
-├── e2e/                   Playwright 端到端（19 个脚本 + run-all runner）
+├── e2e/                   Playwright 端到端（20 个脚本 + run-all runner）
 ├── scripts/watchdog.mjs   看门狗：每分钟检查 agent 心跳与 dev server
 ├── vite.config.ts         Vite 配置 + /zhipu 跨域代理
 └── vitest.config.ts       单测配置（node 环境 + happy-dom 按需注入）
@@ -161,7 +163,7 @@ atoms-demo/
 
 ```bash
 npm test              # 单元测试：82 项 / 9 文件
-npm run test:e2e      # 端到端：19 个 Playwright 脚本，顺序跑完出汇总
+npm run test:e2e      # 端到端：20 个 Playwright 脚本，顺序跑完出汇总
 npm run verify        # typecheck + lint + test + build 一键全跑
 ```
 

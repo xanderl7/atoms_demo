@@ -54,7 +54,9 @@ PreviewPane：iframe srcDoc + sandbox 渲染（与主应用强隔离）
 
 | 模块 | 行数 | 职责 | 关键设计 |
 |---|---|---|---|
-| `App.tsx` | ~750 | 主编排：本地拦截 → 路由 → 执行 → 提交 | 只做编排，不写业务规则 |
+| `App.tsx` | 693 | 主编排：本地拦截 → 路由 → 执行 → 提交 | 只做编排，不写业务规则 |
+| `versionRef.ts` | 72 | 版本指代纯规则 | 「改成第2版/回滚/撤销」直接切版本，不问模型 |
+| `clarify.ts` | 54 | 需求澄清纯规则 | 跳过词表/身份追问/plan 反问检测（无问号反问也拦） |
 | `prompts.ts` | ~500 | 所有提示词 + 路由 JSON 三层容错 | 调生成效果只改这一个文件 |
 | `llm.ts` | ~140 | OpenAI 兼容客户端 | 流式/中断/5xx 重试/1210 自动降级 |
 | `useAutoFix.ts` | ~180 | 自检+自动修复闭环 | hook 化，App 只调 `arm()` |
@@ -114,10 +116,10 @@ iframe 的 error 事件用 capture 阶段监听时会收到三种东西，混在
 ```
 npm run verify  ──▶ typecheck（tsc strict，app/node 分层）
                  ──▶ lint（eslint，typescript-eslint + react-hooks v7）
-                 ──▶ test（vitest 65 项：纯逻辑全覆盖）
+                 ──▶ test（vitest 82 项：纯逻辑全覆盖）
                  ──▶ build（tsc 通过才构建）
 
-npm run test:e2e ──▶ 18 个 Playwright 脚本：真实生成/澄清/修改/回退/
+npm run test:e2e ──▶ 20 个 Playwright 脚本：真实生成/澄清/修改/回退/
                       拒绝/引导/报错条/自检闭环，需 Key + dev server
 ```
 

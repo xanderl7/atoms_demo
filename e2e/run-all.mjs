@@ -11,7 +11,7 @@
  *
  * 前置：npm run dev 已在跑（脚本默认打 http://localhost:5173）。
  */
-import { readdirSync } from 'node:fs'
+import { readdirSync, mkdirSync, appendFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -37,13 +37,22 @@ if (wanted.length && !files.length) {
 
 console.log(`将跑 ${files.length} 个测试：${files.join(' ')}`)
 
+// 每个脚本的完整输出落盘到 e2e/logs/ —— 批量挂掉时靠汇总表的几行字
+// 定位不了是哪个检查项炸的（模型波动/时序竞态），必须能回看原文
+const logDir = path.join(dir, 'logs')
+mkdirSync(logDir, { recursive: true })
+const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+
 const results = []
 for (const f of files) {
   console.log(`\n${'━'.repeat(64)}\n▶ ${f}\n${'━'.repeat(64)}`)
   const r = spawnSync(process.execPath, [path.join(dir, f)], {
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ZHIPU_API_KEY: KEY },
   })
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`
+  process.stdout.write(out)
+  appendFileSync(path.join(logDir, `${stamp}-${f}.log`), out)
   results.push({ file: f, code: r.status ?? 1 })
 }
 
@@ -55,4 +64,5 @@ for (const r of results) {
   console.log(`${ok ? '✅' : '❌'} ${r.file}${ok ? '' : `（退出码 ${r.code}）`}`)
 }
 console.log(`\n${results.length - failed}/${results.length} 个测试通过`)
+console.log(`完整输出已存至 e2e/logs/${stamp}-*.log`)
 process.exit(failed ? 1 : 0)
