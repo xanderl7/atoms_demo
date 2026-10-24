@@ -109,9 +109,11 @@ for (const [idx, sc] of SCENARIOS.entries()) {
   check(sc.name, '自检结论出现', selfCheck === '已出现', selfCheck)
 
   // 3) iframe 有实质内容。
-  //    阈值 120 而不是 200：工具类页面（番茄钟/计算器）天然字少，
-  //    实测瘦身版 136 字符但结构完整（5 按钮/4 标题/3 区块）。
-  //    真正坏死的页面（空 body / 解析崩）会远低于此，另有 TODO 检查和交互检查兜底。
+  //    文本长度不是唯一判据：工具类页面（番茄钟/计算器）天然字少，
+  //    实测瘦身版 108-145 字符但结构完整（5-6 按钮/倒计时/模式切换）。
+  //    判据改为「文本够长」或「交互够丰富」二选一 —— 前者抓内容型空壳，
+  //    后者放过功能完整的工具页；真正坏死的页面（空 body / 解析崩）
+  //    两者都不满足，另有 TODO 检查和交互检查兜底。
   let frameText = ''
   let frameInteractive = 0
   try {
@@ -123,11 +125,12 @@ for (const [idx, sc] of SCENARIOS.entries()) {
   } catch {
     /* iframe 还没就绪 */
   }
+  const textLen = frameText.trim().length
   check(
     sc.name,
     '预览区有实质内容',
-    frameText.trim().length > 120,
-    `${frameText.trim().length} 字符 / ${frameInteractive} 个可交互元素`
+    textLen > 120 || (frameInteractive >= 5 && textLen > 50),
+    `${textLen} 字符 / ${frameInteractive} 个可交互元素`
   )
 
   // 4) 无"未知错误"假报错

@@ -35,34 +35,31 @@ await page.goto('http://localhost:5173', { waitUntil: 'networkidle' })
 // （批量跑时 dev server 冷启动慢，这里等不到就会时好时坏）
 await page.waitForSelector('.composer textarea')
 
-/** 在页面里建一个 iframe 并收集它报回来的错误 */
-const probeIframe = async (html) =>
-  page.evaluate(async (h) => {
-    const mod = await import('/src/iframeProbe.ts')
-    const iframe = document.createElement('iframe')
-    iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups')
-    iframe.srcdoc = mod.withProbe(h)
-    iframe.id = 'probe-' + Math.random().toString(36).slice(2, 7)
-    document.body.appendChild(iframe)
-    return iframe.id
-  }, html)
-
-/** 等一段时间收集 probe 消息 */
-const collect = async (ms) =>
+/**
+ * 建 probe iframe 并收集它报回来的错误。
+ *
+ * 监听器必须和 iframe 创建在【同一次 evaluate】里、且先于 appendChild 挂上 ——
+ * 拆成两次 evaluate 时，批量跑 CDP 往返变慢，iframe 的报错消息会比
+ * 监听器更早到达，直接丢失（单跑偶发、批量必挂）。
+ */
+const probeAndCollect = async (html, ms) =>
   page.evaluate(
-    (t) =>
-      new Promise((resolve) => {
-        const seen = []
-        const onMsg = (e) => {
-          if (e.data?.__atomsProbe === 1) seen.push({ kind: e.data.kind, message: e.data.message })
-        }
-        window.addEventListener('message', onMsg)
-        setTimeout(() => {
-          window.removeEventListener('message', onMsg)
-          resolve(seen)
-        }, t)
-      }),
-    ms
+    async ([h, t]) => {
+      const mod = await import('/src/iframeProbe.ts')
+      const seen = []
+      const onMsg = (e) => {
+        if (e.data?.__atomsProbe === 1) seen.push({ kind: e.data.kind, message: e.data.message })
+      }
+      window.addEventListener('message', onMsg)
+      const iframe = document.createElement('iframe')
+      iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups')
+      iframe.srcdoc = mod.withProbe(h)
+      document.body.appendChild(iframe)
+      await new Promise((r) => setTimeout(r, t))
+      window.removeEventListener('message', onMsg)
+      return seen
+    },
+    [html, ms]
   )
 
 console.log('=== 1) 图片加载失败不该报成"未知错误" ===')
@@ -71,21 +68,20 @@ let brokenImgs = ''
 for (let i = 0; i < 7; i++) {
   brokenImgs += `<img src="https://picsum.photos/seed/x${i}/800/600" data-placeholder="img">`
 }
-const id1 = await probeIframe(
-  `<!DOCTYPE html><html><head><title>t</title></head><body>${brokenImgs}</body></html>`
+const id1 = await probeAndCollect(
+  `<!DOCTYPE html><html><head><title>t</title></head><body>${brokenImgs}</body></html>`,
+  3800
 )
-await page.waitForTimeout(800)
-const r1 = await collect(3000)
-const unknown = r1.filter((x) => x.kind === 'error' && x.message === '未知错误')
+const unknown = id1.filter((x) => x.kind === 'error' && x.message === '未知错误')
 ok('资源加载失败 0 个误报', unknown.length === 0, `误报 ${unknown.length} 个`)
 
 console.log('\n=== 2) 真的 JS 错误还是要报 ===')
-const id2 = await probeIframe(
+const r2 = await probeAndCollect(
   `<!DOCTYPE html><html><head><title>t</title></head><body>
    <script>window.addEventListener('DOMContentLoaded', function(){ null.foo; });<\/script>
-   </body></html>`
+   </body></html>`,
+  2000
 )
-const r2 = await collect(2000)
 const realErr = r2.find((x) => x.kind === 'error')
 ok('JS 错误被报出来', !!realErr, realErr ? `"${realErr.message}"` : '没收到')
 ok('错误消息是真实的（不是"未知错误"）', realErr && realErr.message !== '未知错误')
