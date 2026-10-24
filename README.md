@@ -90,8 +90,8 @@ atoms-demo/
 │   ├── config.ts          LLM 配置存取（localStorage）
 │   ├── types.ts           核心数据结构
 │   └── components/        ChatPanel / PreviewPane / CodePane / Settings / LogPanel
-├── src/__tests__/         单元测试（7 个文件 65 项）
-├── e2e/                   Playwright 端到端（18 个脚本 + run-all runner）
+├── src/__tests__/         单元测试（9 个文件 82 项）
+├── e2e/                   Playwright 端到端（19 个脚本 + run-all runner）
 ├── scripts/watchdog.mjs   看门狗：每分钟检查 agent 心跳与 dev server
 ├── vite.config.ts         Vite 配置 + /zhipu 跨域代理
 └── vitest.config.ts       单测配置（node 环境 + happy-dom 按需注入）
@@ -160,8 +160,8 @@ atoms-demo/
 ## 测试
 
 ```bash
-npm test              # 单元测试：65 项 / 7 文件
-npm run test:e2e      # 端到端：18 个 Playwright 脚本，顺序跑完出汇总
+npm test              # 单元测试：82 项 / 9 文件
+npm run test:e2e      # 端到端：19 个 Playwright 脚本，顺序跑完出汇总
 npm run verify        # typecheck + lint + test + build 一键全跑
 ```
 

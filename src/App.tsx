@@ -30,6 +30,13 @@ import { describeLimits, renderLimits } from './limits'
 import { detectUnsupported, renderUnsupported } from './unsupported'
 import { detectRefuse, renderRefuse } from './refuse'
 import { useAutoFix } from './useAutoFix'
+import { isRollback, resolveVersionRef, buildVersionSummary } from './versionRef'
+import {
+  SKIP_CLARIFY_WORDS,
+  ACCEPT_PLACEHOLDER_WORDS,
+  askedIdentity,
+  planIsQuestion,
+} from './clarify'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
@@ -38,109 +45,11 @@ const STEP_LABELS = [
   { id: 'code', label: '生成代码' },
 ]
 
-/** 「改回去 / 撤销 / 回退」这类回退意图 —— 系统有版本历史，直接切版本比重新生成快 100 倍 */
-const ROLLBACK_WORDS = ['改回去', '回退', '撤销', '还原', '回到上一版', '退回', '上一个版本', '上一步']
-
-const isRollback = (t: string) => ROLLBACK_WORDS.some((w) => t.includes(w))
-
-/** 中文数字 → 阿拉伯数字，用来解析"第二版" */
-const CN_NUM: Record<string, number> = {
-  一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5,
-  六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
-}
-
-/**
- * 用户明确指代某一个版本时，直接在版本历史里切过去。
- *
- * 为什么必须本地做：模型看不到版本历史，"第二版"对它来说是空气 ——
- * 它会猜、会问"你说的是哪个页面"、甚至把"版"理解成"页面数量"。
- * 用户实测踩过这个坑："改成第二版" → 它回"我目前没有第二版的具体信息"。
- *
- * 系统里明明存着每一版，直接切过去就行，不用问模型。
- */
-function resolveVersionRef(text: string, total: number, currentIdx: number): number | null {
-  if (total <= 1) return null
-
-  // "改成第二版" / "改回第2版" / "回到第 2 版" / "换成第2版那个"
-  const m = /第\s*([0-9０-９一二两三十]+)\s*版/.exec(text)
-  if (m) {
-    const raw = m[1]
-    const n = /^[0-9０-９]+$/.test(raw) ? parseInt(raw, 10) : CN_NUM[raw]
-    if (n && n >= 1 && n <= total) return n - 1
-    return null
-  }
-
-  // 回退之后说"改过来吧" = 回到刚才离开的那一版
-  if (/(改过来|还是改过来|改回来|回到刚才|刚才那版|刚才那个|刚才的)/.test(text)) {
-    if (currentIdx + 1 < total) return currentIdx + 1
-  }
-
-  // "上一版 / 前一版"
-  if (/(上一版|前一版|上一个版本)/.test(text) && currentIdx > 0) return currentIdx - 1
-
-  // "下一版 / 后一版"
-  if (/(下一版|后一版|后面那版|后面那一版)/.test(text) && currentIdx + 1 < total) {
-    return currentIdx + 1
-  }
-
-  return null
-}
-
-/** 把版本历史摘要出来给路由看 —— 模型至少要知道"有几版、每版是啥" */
-function buildVersionSummary(versions: AppVersion[], currentIdx: number): string {
-  if (versions.length <= 1) return ''
-  const lines = [`版本历史（共 ${versions.length} 版，当前停在第 ${currentIdx + 1} 版）：`]
-  versions.forEach((v, i) => {
-    const desc = (v.plan || v.prompt || '').split('\n')[0].replace(/^-\s*/, '').slice(0, 60)
-    lines.push(`- 第 ${i + 1} 版：${desc}${i === currentIdx ? '  ← 当前' : ''}`)
-  })
-  lines.push('用户说"改成第 N 版""改回第二版"这类话，指的就是上面某一版。')
-  return lines.join('\n')
-}
-
 const mkSteps = (): Step[] => STEP_LABELS.map((s) => ({ ...s, status: 'pending' }))
 const doneSteps = (ids: string[]): Step[] =>
   STEP_LABELS.filter((s) => ids.includes(s.id)).map((s) => ({ ...s, status: 'done' }))
 
 const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'AbortError'
-
-/**
- * 用户说"就按你默认的来"这类话。
- * 注意：这是【放弃回答】，不是【已回答】。原来的 fromOption 把它当成已作答，
- * 直接跳过后续所有澄清 —— 结果个人介绍页连"你是谁"都没问过就生成了，
- * 满页只能是占位文字。
- */
-const SKIP_CLARIFY_WORDS = [
-  '就按你默认的来',
-  '你定就行',
-  '按默认',
-  '你决定',
-  '随便',
-  '都可以',
-  '你看着办',
-  '你来定',
-]
-
-/** 用户明确接受"用占位先做" —— 给过一次跳过权就不再问 */
-const ACCEPT_PLACEHOLDER_WORDS = ['先用占位做', '占位先做', '后面自己改']
-
-/** 澄清历史里是否已经问过「这是谁的页面」 */
-const askedIdentity = (history: { q: string; a: string }[]) =>
-  history.some((h) => /(名字|姓名|你是谁|是谁|身份|职业|介绍自己|贵姓)/.test(h.q))
-
-/**
- * plan 里出现问号 = 模型在向用户反问。
- * 这时候【绝不能】照着它生成代码 —— 用户截图反馈的 bug 就是这个：
- * 助手气泡先问"你主要想用后端来做什么？"，紧接着"正在生成代码… 5861 字符"，
- * 一边问一边干，用户还没回答，页面已经生成完了。
- *
- * 判据要同时有问号和疑问词，否则"FAQ 区块""在线问答"这种正常 plan 会被误杀。
- */
-const planIsQuestion = (plan: string) => {
-  const t = plan.trim()
-  if (!t || !/[？?]/.test(t)) return false
-  return /(吗|呢|哪些|什么|怎么|如何|哪一|要不要|能不能|可以吗|请问|想用|想做)/.test(t)
-}
 
 export default function App() {
   const [cfg, setCfg] = useState<LLMConfig>(loadConfig)

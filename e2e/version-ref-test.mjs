@@ -68,8 +68,9 @@ ok('「改成蓝色」不触发', (await resolve('改成蓝色', 2, 0)) === null
 ok('「把第二版那个区块删掉」——含"第二版"会触发（可接受，意图明确）', (await resolve('把第二版那个区块删掉', 2, 0)) === 1)
 
 console.log('\n=== 版本历史摘要（给路由看）===')
+// 定义已随 App.tsx 拆分搬到 versionRef.ts，白盒断言跟随新位置
 const summary = await page.evaluate(async () => {
-  const src = await fetch('/src/App.tsx').then((r) => r.text())
+  const src = await fetch('/src/versionRef.ts').then((r) => r.text())
   return src.includes('buildVersionSummary') && src.includes('当前停在第')
 })
 ok('有 buildVersionSummary', summary, '')
