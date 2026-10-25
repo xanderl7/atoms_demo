@@ -13,7 +13,7 @@
  *
  * 前置：npm run dev 已在跑，且 .env 配了 ZHIPU_API_KEY。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const URL = process.env.APP_URL || 'http://localhost:5173'
 const ENDPOINT = '/api/builtin-key'

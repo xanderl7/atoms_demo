@@ -93,7 +93,6 @@ export default function App() {
   const [confirmReset, setConfirmReset] = useState(false)
   /** 登录态 + 注册/登录弹窗 */
   const [authUser, setAuthUser] = useState<AuthUser | null>(loadAuth)
-  const [showAuth, setShowAuth] = useState(false)
   const [busy, setBusy] = useState(false)
   const [elapsed, setElapsed] = useState(0)
 
@@ -753,11 +752,7 @@ export default function App() {
               退出
             </button>
           </>
-        ) : (
-          <button className="icon-btn" onClick={() => setShowAuth(true)}>
-            登录 / 注册
-          </button>
-        )}
+        ) : null}
       </div>
 
       <div className="main">
@@ -826,9 +821,11 @@ export default function App() {
         />
       )}
       {showLog && <LogPanel onClose={() => setShowLog(false)} />}
-      {showAuth && (
+      {/* 门禁：未登录时强制弹出登录/注册弹窗，且关不掉（required），
+          必须登录或注册成功才关闭。退出登录后 authUser 变 null，门禁重新出现。 */}
+      {!authUser && (
         <AuthModal
-          onClose={() => setShowAuth(false)}
+          required
           onAuthed={(username) => {
             saveAuth({ username })
             setAuthUser({ username })

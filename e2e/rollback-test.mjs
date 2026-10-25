@@ -1,7 +1,7 @@
 /**
  * 专项验证：「改回去 / 撤销 / 回退」是否真的切回上一版，而不是重新生成一份一样的
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

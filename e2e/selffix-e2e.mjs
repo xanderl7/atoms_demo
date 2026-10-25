@@ -11,7 +11,7 @@
  *
  * 跑法：ZHIPU_API_KEY=xxx node e2e/selffix-e2e.mjs（需先 npm run dev）
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

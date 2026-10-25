@@ -10,7 +10,7 @@
  *  根因：模型把反问写进 plan 字段（plan 为空时还会 fallback 成 reply），
  *  系统照常生成。修：plan 里是问号+疑问词 → 停下来问，不生成。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 import fs from 'node:fs'
 
 const KEY = (process.env.ZHIPU_API_KEY || '').trim() || fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()

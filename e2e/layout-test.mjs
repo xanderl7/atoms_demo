@@ -3,7 +3,7 @@
  * 目的：确保 .preview-wrap 里的 .stage（iframe 的父盒子）能真正吃满剩余高度。
  * 之前 .stage 在纵向 flex 容器里没写 flex，高度塌成 iframe 默认 150px → 大片留白。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const URL = 'http://localhost:5173'
 let pass = 0,

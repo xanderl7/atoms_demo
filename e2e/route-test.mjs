@@ -2,7 +2,7 @@
  * 验证「改动量级分流」：路由能不能把 小改动/大改动/质疑 分对。
  * 不测 UI，纯测提示词 + 解析 + 本地快改规则。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

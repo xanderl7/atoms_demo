@@ -11,7 +11,7 @@
  *   1) 本地直接切版本（治本）—— 系统存着每一版，凭什么让模型猜
  *   2) 版本历史摘要传给路由（治标）—— 让它至少知道有几版、每版是啥
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const browser = await chromium.launch()
 const page = await browser.newPage()

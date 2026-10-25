@@ -8,7 +8,7 @@
  *
  * 判据：给 iframe 节点打标记，切走再切回，标记还在说明节点没被重建。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 import fs from 'node:fs'
 
 const KEY = (process.env.ZHIPU_API_KEY || '').trim() || fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()

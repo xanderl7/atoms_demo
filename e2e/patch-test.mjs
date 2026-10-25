@@ -4,7 +4,7 @@
  *  2. 定位 + 补丁 —— 上下文用量远小于整篇重写
  *  3. 补丁应用后页面没坏
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

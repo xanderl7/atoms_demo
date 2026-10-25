@@ -9,7 +9,7 @@
  *   1. 任何情况下都不出现浏览器原生对话框（Playwright 的 dialog 事件）
  *   2. 页面自己调 alert() 时，改成页面内提示条（data-atoms-toast）
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })

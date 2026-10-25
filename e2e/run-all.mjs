@@ -26,7 +26,7 @@ if (!KEY) {
 // 命令行给了文件名就跑那几个，否则全量。名字可以不带 .mjs
 const wanted = process.argv.slice(2).map((a) => (a.endsWith('.mjs') ? a : `${a}.mjs`))
 const all = readdirSync(dir)
-  .filter((f) => f.endsWith('.mjs') && f !== 'run-all.mjs')
+  .filter((f) => f.endsWith('.mjs') && f !== 'run-all.mjs' && !f.startsWith('_'))
   .sort()
 const files = wanted.length ? all.filter((f) => wanted.includes(f)) : all
 

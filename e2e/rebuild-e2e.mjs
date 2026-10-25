@@ -20,7 +20,7 @@
  * 跑法：ZHIPU_API_KEY=xxx node e2e/rebuild-e2e.mjs（需先 npm run dev）
  * 全程约 4-6 分钟（含 2 次真实生成）。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

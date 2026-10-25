@@ -303,6 +303,12 @@ textarea { font-family: inherit; }
   place-items: center;
   z-index: 50;
 }
+/* 门禁：更重的遮罩，强调「不登录就走不了」 */
+.mask.locked {
+  background: #000000e6;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
 .modal {
   width: 420px;
   background: var(--panel);

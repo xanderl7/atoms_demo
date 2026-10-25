@@ -5,7 +5,7 @@
  *   3. 联系表单必须能用（点了有反应）
  *   4. 必须给出完整的边界说明
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

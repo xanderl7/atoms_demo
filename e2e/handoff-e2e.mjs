@@ -1,7 +1,7 @@
 /**
  * 端到端：作品集生成 → 说"换成真实作品" → 必须走引导，绝不编造。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 import fs from 'node:fs'
 
 const KEY = (process.env.ZHIPU_API_KEY || '').trim() || fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()

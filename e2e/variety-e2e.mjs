@@ -17,7 +17,7 @@
  * 跑法：ZHIPU_API_KEY=xxx node e2e/variety-e2e.mjs（需先 npm run dev）
  * 每个场景生成 + 自检约 40-70s，10 个场景约 8-12 分钟。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const URL = process.env.APP_URL || 'http://localhost:5173'
 const STORE = 'atoms-demo.llm-config'

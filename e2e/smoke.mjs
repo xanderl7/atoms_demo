@@ -2,7 +2,7 @@
  * Atoms-Demo 端到端自动化测试
  * 跑法：ZHIPU_API_KEY=xxx npm run test:e2e（需先 npm run dev）
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const KEY = process.env.ZHIPU_API_KEY || ''
 const URL = process.env.APP_URL || 'http://localhost:5173'

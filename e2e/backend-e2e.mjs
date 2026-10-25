@@ -11,7 +11,7 @@
  *   2. 要么直接做前端示意版（不反问）
  *   两种都算对，唯独"反问 + 同时生成"是 bug。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 import fs from 'node:fs'
 
 const KEY = (process.env.ZHIPU_API_KEY || '').trim() || fs.readFileSync(new URL('./zhipu-key.txt', import.meta.url), 'utf8').trim()

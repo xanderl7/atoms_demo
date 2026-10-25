@@ -12,7 +12,7 @@
  *   3. 换版本（resetKey 变化）→ 旧错误被清空
  *   4. 报错条默认折叠，不遮挡预览区
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })

@@ -2,7 +2,7 @@
  * 验证「坏 JSON 不漏到界面上」。
  * 复现用户截图的场景：模型输出 ```json {...} 且 plan 里有真实换行。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const URL = process.env.APP_URL || 'http://localhost:5173'
 const results = []

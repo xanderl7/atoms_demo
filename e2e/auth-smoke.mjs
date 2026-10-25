@@ -13,9 +13,14 @@ const run = async () => {
   await page.goto(BASE + '/', { waitUntil: 'load' })
   await page.waitForTimeout(800)
 
-  // 打开弹窗
-  await page.getByRole('button', { name: '登录 / 注册', exact: true }).click()
+  // 门禁：进入即强制弹出，不用点按钮
   await page.waitForSelector('.seg', { timeout: 5000 })
+  const autoOpen = (await page.locator('.modal').count()) > 0
+  // 关不掉：没有「取消」按钮
+  const hasCancel = (await page.getByRole('button', { name: '取消', exact: true }).count()) === 1
+  // 点遮罩也关不掉
+  await page.locator('.mask').click({ position: { x: 5, y: 5 } }).catch(() => {})
+  const stillOpenAfterMask = (await page.locator('.modal').count()) > 0
 
   // 切到「注册」
   await page.locator('.seg button', { hasText: '注册' }).click()
@@ -36,21 +41,22 @@ const run = async () => {
   const modalGone = (await page.locator('.modal').count()) === 0
   const ls = await page.evaluate(() => localStorage.getItem('atoms-demo.auth'))
 
-  // 退出 → 回到未登录态
-  let backToLogin = false
+  // 退出 → 门禁重新出现（必须再登录才能用）
+  let gateRelocked = false
   if (chip.includes(USER)) {
     await page.getByRole('button', { name: '退出', exact: true }).click()
-    await page.waitForTimeout(200)
-    backToLogin = await page
-      .getByRole('button', { name: '登录 / 注册', exact: true })
-      .isVisible()
-      .catch(() => false)
+    await page.waitForTimeout(300)
+    gateRelocked = (await page.locator('.modal').count()) > 0
   }
 
-  console.log(JSON.stringify({ user: USER, chip, modalGone, ls, backToLogin, errors }, null, 2))
+  console.log(JSON.stringify({
+    user: USER, autoOpen, hasCancel, stillOpenAfterMask,
+    chip, modalGone, ls, gateRelocked, errors,
+  }, null, 2))
   await browser.close()
 
-  const ok = chip.includes(USER) && modalGone && !!ls && backToLogin && errors.length === 0
+  const ok = chip.includes(USER) && modalGone && !!ls && !hasCancel
+    && autoOpen && stillOpenAfterMask && gateRelocked && errors.length === 0
   process.exit(ok ? 0 : 1)
 }
 run().catch((e) => { console.error(e); process.exit(2) })

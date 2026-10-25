@@ -2,12 +2,18 @@ import { useState } from 'react'
 import { register, login } from '../auth'
 
 interface Props {
-  onClose: () => void
+  /** 关闭回调（非门禁模式下，点遮罩 / 取消 时触发） */
+  onClose?: () => void
   onAuthed: (username: string) => void
+  /**
+   * 门禁模式：必须登录 / 注册成功才能关闭。
+   * 不显示「取消」、点遮罩不关闭 —— 用户不登录就一直卡在这个页面。
+   */
+  required?: boolean
 }
 
 /** 最简注册 / 登录弹窗：用户名 + 密码，无校验、无第三方。 */
-export default function AuthModal({ onClose, onAuthed }: Props) {
+export default function AuthModal({ onClose, onAuthed, required = false }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -25,13 +31,15 @@ export default function AuthModal({ onClose, onAuthed }: Props) {
       return
     }
     if (r.user) onAuthed(r.user.username)
-    onClose()
+    onClose?.()
   }
 
   return (
-    <div className="mask" onClick={onClose}>
+    <div className={required ? 'mask locked' : 'mask'} onClick={required ? undefined : onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{mode === 'login' ? '登录' : '注册'}</h3>
+
+        {required && <p className="hint">登录或注册后即可开始使用。</p>}
 
         <div className="seg">
           <button className={mode === 'login' ? 'on' : ''} onClick={() => { setMode('login'); setErr('') }}>
@@ -74,9 +82,11 @@ export default function AuthModal({ onClose, onAuthed }: Props) {
 
         <div className="modal-actions">
           <div className="spacer" />
-          <button className="icon-btn" onClick={onClose}>
-            取消
-          </button>
+          {!required && (
+            <button className="icon-btn" onClick={onClose}>
+              取消
+            </button>
+          )}
           <button className="send" disabled={busy} onClick={submit}>
             {busy ? '处理中…' : mode === 'login' ? '登录' : '注册'}
           </button>

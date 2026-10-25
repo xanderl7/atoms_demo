@@ -2,7 +2,7 @@
  * 验证「边界说明」：模型用了占位内容时，必须原原本本告诉用户
  *   我做了什么 / 我没做什么 / 你后续怎么改
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const URL = process.env.APP_URL || 'http://localhost:5173'
 const results = []

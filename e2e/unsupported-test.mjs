@@ -2,7 +2,7 @@
  * 「我们做不到的事」的识别测试。
  * 目标：用户要真实素材时必须走引导，绝不能去编造。
  */
-import { chromium } from 'playwright'
+import { chromium } from './_harness.mjs'
 
 const browser = await chromium.launch()
 const page = await browser.newPage()

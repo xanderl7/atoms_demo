@@ -7,14 +7,13 @@ const run = async () => {
   const browser = await chromium.launch()
   const page = await browser.newPage({ viewport: { width: 1200, height: 700 } })
 
-  // 1) 未登录态：顶栏「登录 / 注册」按钮
+  // 1) 未登录态：进入即被门禁挡住（弹窗已自动打开，无需点按钮）
   await page.goto(BASE + '/', { waitUntil: 'load' })
   await page.waitForTimeout(500)
-  await page.screenshot({ path: `${OUT}/01-topbar-unauth.png` })
-
-  // 2) 打开登录弹窗
-  await page.getByRole('button', { name: '登录 / 注册', exact: true }).click()
   await page.waitForSelector('.seg', { timeout: 3000 })
+  await page.screenshot({ path: `${OUT}/01-gate-autopen.png` })
+
+  // 2) 登录 tab（默认）
   await page.waitForTimeout(300)
   await page.screenshot({ path: `${OUT}/02-modal-login.png` })
 
