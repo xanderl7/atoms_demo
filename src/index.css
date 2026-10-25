@@ -338,6 +338,15 @@ textarea { font-family: inherit; }
   outline: none;
 }
 .modal input:focus, .modal select:focus { border-color: var(--accent); }
+/* 锁定的输入框：调暗 + 禁用光标，明确表达「不可改」，而不是看起来像坏掉 */
+.modal input:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.modal .locked-note {
+  margin: 0 0 16px;
+  color: #f0b429;
+}
 .modal select {
   display: block;
   width: 100%;

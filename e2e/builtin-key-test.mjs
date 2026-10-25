@@ -6,10 +6,10 @@
  *   1. 全新浏览器打开 → 内置 Key 自动生效（顶栏胶囊 + 配置落盘）
  *   2. 不弹设置面板，直接能生成（开箱即用的承诺）
  *   3. 设置面板显示「7 天文案」提示（只提示，不拦截）
- *   4. 覆盖 API Key 输入框 → 切自己的 Key（互不影响）
- *   5. 「重置」恢复默认态（内置 Key 重新向服务端要回来并填上）
- *   6. 清空 Key 保存 → 自动回退内置 Key，且 7 天起算时间不续期
- *   7. 内置 Key 不进任何前端资源（不进 bundle）
+ *   4. 输入框（API Key / Base URL / 模型）全部 disabled 禁止编辑；
+ *      思维链下拉仍可选择（演示锁定策略：防他人改坏，但保留可调项）
+ *   （已移除：覆盖自己的 Key、重置、清空回退 —— 现统一锁定内置体验 Key）
+ *   5. 内置 Key 不进任何前端资源（不进 bundle）
  *
  * 前置：npm run dev 已在跑，且 .env 配了 ZHIPU_API_KEY。
  */
@@ -81,7 +81,7 @@ check('生成结果无失败提示', !/生成失败/.test(genMsg), genMsg.slice(
 const bodyText = await page.frameLocator('iframe').locator('body').innerText().catch(() => '')
 check('预览有可见内容', bodyText.trim().length > 5, JSON.stringify(bodyText.slice(0, 50)))
 
-// ===== 3. 设置面板的 7 天文案（只提示） =====
+// ===== 3. 设置面板的 7 天文案（只提示）=====
 await page.locator('.key-chip').click()
 await page.waitForSelector('.modal')
 const modalText = await page.locator('.modal').innerText()
@@ -90,64 +90,21 @@ check('显示有效期 7 天文案', /有效期\s*7\s*天/.test(modalText))
 check('显示截止日期', /至\s*20\d\d-\d\d-\d\d/.test(modalText))
 check('不再出现「用我自己的 Key」按钮', modalText.includes('用我自己的 Key') === false)
 
-// ===== 4. 切自己的 Key（直接在输入框覆盖即可）=====
-await page.locator('.modal label', { hasText: 'API Key' }).locator('input').fill('my-own-test-key')
-await page.locator('.modal .send', { hasText: '保存' }).click()
-await page.waitForTimeout(400)
-check('切自己 Key 后顶栏胶囊消失', (await page.locator('.key-chip').count()) === 0)
-const cfg2 = await readCfg()
-check('keySource=custom', cfg2?.keySource === 'custom')
-check('自己的 Key 已保存', cfg2?.apiKey === 'my-own-test-key')
-await page.locator('.icon-btn[title="模型设置"]').click()
-await page.waitForSelector('.modal')
-check(
-  '自己 Key 时不再显示「正在使用内置体验 Key」提示',
-  (await page.locator('.modal').innerText()).includes('正在使用内置体验 Key') === false
-)
+// ===== 4. 输入框锁定，禁止编辑；思维链下拉仍可选 =====
+const inputsLocked = await page.evaluate(() => {
+  const inputs = [...document.querySelectorAll('.modal input')]
+  return inputs.length > 0 && inputs.every((i) => i.disabled)
+})
+check('API Key / Base URL / 模型 输入框均为 disabled（禁止编辑）', inputsLocked)
+const selectEditable = await page.evaluate(() => {
+  const s = [...document.querySelectorAll('.modal select')]
+  return s.length > 0 && s.every((x) => !x.disabled)
+})
+check('思维链下拉仍可选择（未禁用）', selectEditable)
 await page.locator('.modal .icon-btn', { hasText: '取消' }).click()
 await page.waitForTimeout(200)
 
-// ===== 5. 「重置」恢复默认态（内置 Key 重新填上）=====
-await page.locator('.icon-btn[title="模型设置"]').click()
-await page.waitForSelector('.modal')
-await page.locator('.modal .icon-btn', { hasText: '重置' }).click()
-// 重置成功后 API Key 框会被重新填回内置 Key（见 Settings.resetToDefault）。
-// 这是「恢复默认态」的真实信号；成功文案已按需求删除，不再依赖 .test-result。
-await page.waitForFunction(
-  (key) => {
-    const inputs = [...document.querySelectorAll('.modal label input')]
-    const keyInput = inputs.find((i) => i.type === 'password')
-    return !!keyInput && keyInput.value === key
-  },
-  epData.apiKey,
-  { timeout: 10000 }
-)
-const resetKeyVal = await page
-  .locator('.modal label', { hasText: 'API Key' })
-  .locator('input')
-  .inputValue()
-check('重置后 API Key 框里已填回内置 Key', resetKeyVal === epData.apiKey, `len=${resetKeyVal.length}`)
-await page.locator('.modal .send', { hasText: '保存' }).click()
-await page.waitForTimeout(400)
-check('重置保存后顶栏胶囊回来', (await page.locator('.key-chip').count()) === 1)
-const cfg3 = await readCfg()
-check(
-  '重置后 keySource=builtin 且 Key 与端点一致',
-  cfg3?.keySource === 'builtin' && cfg3?.apiKey === epData.apiKey,
-  `keySource=${cfg3?.keySource} key一致=${cfg3?.apiKey === epData.apiKey}`
-)
-
-// ===== 6. 清空 Key 保存 → 自动回退内置，且不续期 =====
-await page.locator('.icon-btn[title="模型设置"]').click()
-await page.waitForSelector('.modal')
-await page.locator('.modal label', { hasText: 'API Key' }).locator('input').fill('')
-await page.locator('.modal .send', { hasText: '保存' }).click()
-await page.waitForSelector('.key-chip', { timeout: 10000 })
-check('清空保存后自动回退内置 Key', (await page.locator('.key-chip').count()) === 1)
-const started2 = await page.evaluate((k) => localStorage.getItem(k), STARTED)
-check('7 天起算时间不变（切来切去不续期）', started2 === started1, `${started1} → ${started2}`)
-
-// ===== 7. 内置 Key 不进任何前端资源 =====
+// ===== 5. 内置 Key 不进任何前端资源 =====
 const leaked = await page.evaluate(async (key) => {
   const urls = [
     document.documentElement.outerHTML,
