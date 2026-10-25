@@ -76,6 +76,29 @@ textarea { font-family: inherit; }
   color: #c7d2fe;
 }
 
+/* 弹窗内的登录/注册切换，复用顶栏 segmented 的观感 */
+.seg {
+  display: flex;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  margin-bottom: 12px;
+  width: fit-content;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.seg button.on {
+  background: var(--accent-soft);
+  color: #c7d2fe;
+}
+
 .icon-btn {
   background: var(--panel-2);
   border: 1px solid var(--border);
@@ -85,6 +108,34 @@ textarea { font-family: inherit; }
   font-size: 13px;
 }
 .icon-btn:hover { color: var(--text); }
+.icon-btn.danger { color: #fca5a5; border-color: rgba(220, 80, 80, 0.4); }
+.icon-btn.danger:hover { color: #fff; background: rgba(220, 80, 80, 0.22); }
+
+/* 顶栏「体验 Key」胶囊：内置体验 Key 生效时出现，点了打开设置。
+   用主题色描边跟普通图标按钮区分开 —— 一眼看出「现在用的是谁的 Key」。 */
+.key-chip {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: #c7d2fe;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.key-chip:hover { color: #fff; }
+
+/* 顶栏登录态胶囊：和 key-chip 同款观感，但用独立 class 避免和
+   「体验 Key」胶囊共用选择器时互相干扰。 */
+.user-chip {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: #c7d2fe;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.user-chip:hover { color: #fff; }
 
 .main {
   display: grid;
@@ -129,8 +180,28 @@ textarea { font-family: inherit; }
   gap: 12px;
 }
 
+/* 每条消息一行：头像 + 内容列。AI 头像在左、用户头像在右，更像聊天。 */
+.row { display: flex; gap: 8px; align-items: flex-start; }
+.row.user { flex-direction: row-reverse; }
+.row .avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 2px;
+  user-select: none;
+}
+.row.assistant .avatar { background: var(--accent); color: #fff; }
+.row.user .avatar { background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
+.row .col { display: flex; flex-direction: column; min-width: 0; max-width: 82%; }
+.row.user .col { align-items: flex-end; }
+
 .bubble {
-  max-width: 92%;
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: 12px;
   font-size: 14px;
@@ -139,13 +210,11 @@ textarea { font-family: inherit; }
   word-break: break-word;
 }
 .bubble.user {
-  align-self: flex-end;
   background: var(--accent);
   color: #fff;
   border-bottom-right-radius: 4px;
 }
 .bubble.assistant {
-  align-self: flex-start;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
@@ -163,6 +232,20 @@ textarea { font-family: inherit; }
 .step.done { color: var(--text); }
 .step.done .dot { background: var(--ok); }
 @keyframes pulse { 50% { opacity: .35; } }
+
+/* 「已等待」用沙漏，别用 bullet —— 否则和上方步骤条的 .dot 圆点混淆，
+   用户分不清"在等待"还是"某步骤已完成"。沙漏翻转动画表达"计时中"。 */
+.step.waiting { color: var(--accent); }
+.step.waiting .hourglass {
+  flex: 0 0 auto;
+  color: var(--accent);
+  animation: hg-flip 1.4s ease-in-out infinite;
+}
+@keyframes hg-flip {
+  0%   { transform: rotate(0deg); }
+  50%  { transform: rotate(180deg); }
+  100% { transform: rotate(360deg); }
+}
 
 .composer {
   border-top: 1px solid var(--border);
@@ -253,14 +336,24 @@ textarea { font-family: inherit; }
   display: block;
   width: 100%;
   margin-top: 6px;
-  background: var(--panel-2);
+  background-color: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
-  padding: 8px 10px;
+  padding: 8px 32px 8px 10px;
   font-size: 13px;
   outline: none;
+  /* 重置原生下拉箭头（不同浏览器位置/大小不一致，且与 padding 打架），
+     改用统一的内置 caret，右内边距留给箭头，文字不会被盖住 */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%238b93a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
 }
+.modal select::-ms-expand { display: none; }
 .modal.wide { width: 760px; }
 
 /* ---------- 日志面板 ---------- */
@@ -316,8 +409,23 @@ textarea { font-family: inherit; }
 
 .send.stop { background: #b91c1c; }
 .send.stop:hover { background: #dc2626; }
+.send.danger { background: #b91c1c; }
+.send.danger:hover { background: #dc2626; }
 
 .modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+/* 设置弹窗里的 Key 来源提示框：
+   .key-notice       —— 正在用内置体验 Key（说明 7 天文案，不拦截） */
+.key-notice {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
 .test-result {
   margin: 0 0 12px;
   font-size: 12.5px;

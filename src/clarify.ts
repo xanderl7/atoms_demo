@@ -35,20 +35,36 @@ export const askedIdentity = (history: { q: string; a: string }[]) =>
  * plan 里出现问号 = 模型在向用户反问。
  * 这时候【绝不能】照着它生成代码。
  *
- * 判据要同时有问号和疑问词，否则"FAQ 区块""在线问答"这种正常 plan 会被误杀。
- * 模型也爱把反问写成不带问号的陈述句（"请问你想要什么风格"），
- * 这种只有出现明确的问句引导语（请问/想确认…）且引导语在疑问词之前才算反问。
+ * 三层判定（宽松但安全，宁可多拦一轮澄清，也不能"一边问一边生成"）：
+ *   1) 明显的疑问语气词（吗 / 呢 / 要不要 / 能不能 / 可以吗）——
+ *      陈述句里几乎不会出现，命中即反问，不要求问号。
+ *   2) 带问号 + 疑问词（什么 / 怎么 / 如何 / 哪些 …，含「请问」）。
+ *   3) 无问号：两种语序算反问 ——
+ *      a) 以「请问」开头（礼貌反问开场），本身就是问句；
+ *      b) 疑问词之前有提问引导（你 / 您 / 想 / 请 / 需要 / 是否 …）。
+ *    排除「做什么风格请问」这类把"请问"甩在句尾当标签的陈述句。
+ *
+ * 历史坑：模型把反问写成不带问号也没"请问"引导的陈述句
+ * （"你想做一个什么样的网站"），旧逻辑（必须 问号 或 引导语在疑问词前）
+ * 直接漏判 → 系统照着反问去生成，用户看到"一边问一边做"。
  */
-/** 有问号时的疑问词表（「请问」本身也算） */
-const QUESTION_WORD = /(吗|呢|哪些|什么|怎么|如何|哪一|要不要|能不能|可以吗|请问|想用|想做)/
-/** 无问号时的疑问词表（不含引导语自身，避免位置比较恒假） */
-const QUESTION_WORD_NO_LEAD = /(吗|呢|哪些|什么|怎么|如何|哪一|要不要|能不能|可以吗|想用|想做)/
+const QUESTION_PARTICLE = /(吗|呢|要不要|能不能|可以吗)/
+const QUESTION_WORD = /(什么|怎么|如何|哪些|哪一|想用|想做)/
+const QUESTION_LEAD = /(你|您|想问|想确认|想|请|需要|是否|跟您|跟你)/
 
 export const planIsQuestion = (plan: string) => {
   const t = plan.trim()
   if (!t) return false
-  if (/[？?]/.test(t)) return QUESTION_WORD.test(t)
-  const lead = /(请问|想问|想确认|麻烦确认|跟您确认|跟你确认)/.exec(t)
-  const word = QUESTION_WORD_NO_LEAD.exec(t)
-  return !!lead && !!word && lead.index < word.index
+  // 1) 疑问语气词本身就是反问信号，不必要求问号
+  if (QUESTION_PARTICLE.test(t)) return true
+  // 2) 带问号 + 疑问词（含「请问」作为疑问词）
+  if (/[？?]/.test(t) && /(什么|怎么|如何|哪些|哪一|想用|想做|请问)/.test(t)) return true
+  // 3) 无问号：以下两种语序算反问
+  //    a) 以「请问」开头（礼貌反问开场），本身就是问句
+  //    b) 疑问词之前有提问引导（你 / 您 / 想 / 请 / 需要 / 是否 …）
+  //    排除「做什么风格请问」这类把"请问"甩在句尾当标签的陈述句。
+  if (/^请问/.test(t)) return true
+  const word = QUESTION_WORD.exec(t)
+  const lead = QUESTION_LEAD.exec(t)
+  return !!word && !!lead && lead.index < word.index
 }

@@ -62,6 +62,15 @@ check('输入框可见', await page.locator('.composer textarea').isVisible())
 check('初始无代码时显示空态', (await page.locator('.empty').count()) > 0)
 
 // ===== 2. 无 Key 时不吞消息 =====
+// dev server 预置了内置体验 Key（开箱即用），页面打开就会自动补上。
+// 这里把 /api/builtin-key 伪造成 404 模拟静态部署（没有这个端点），
+// 验证的正是「拿不到内置 Key → 引导用户填自己的」兜底路径。
+// （用 fulfill 而不是 abort：abort 会浏览器报 "Failed to load resource"
+//   console error，污染最后的 console 检查；404 对应用语义一样 ——
+//   r.ok 为 false，useBuiltinKey 静默放底。）
+await page.route('**/api/builtin-key', (route) =>
+  route.fulfill({ status: 404, contentType: 'text/plain', body: '' })
+)
 await setCfg('')
 await page.locator('.composer textarea').fill('测试无key')
 await page.locator('.send').click()
@@ -73,7 +82,12 @@ check(
   (await page.locator('.bubble.assistant').last().innerText()).includes('API Key')
 )
 await page.locator('.modal .icon-btn', { hasText: '取消' }).click().catch(() => {})
+await page.unroute('**/api/builtin-key')
 await page.waitForTimeout(200)
+// 上面的 builtin-key 404 是【故意伪造】的静态部署兜底测试，不是应用缺陷。
+// 它的资源 404 会写进 consoleErrors，污染第 9 步「无 console error」检查，
+// 所以这里把 mock 期间累计的 console error 清空，只保留后续真实交互的报错。
+consoleErrors.length = 0
 
 // ===== 3. 中断功能 =====
 await setCfg(KEY)

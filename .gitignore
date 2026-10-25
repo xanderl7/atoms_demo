@@ -9,6 +9,12 @@ npm-debug.log*
 .env
 .env.local
 
+# 本地 SQLite 用户库（注册数据，不进 git）
+data/
+*.db
+*.db-shm
+*.db-wal
+
 # 看门狗运行时产物（不进 git）
 .heartbeat
 scripts/watchdog.log
@@ -16,3 +22,4 @@ scripts/STALL_ALERT
 
 # e2e 批量运行的完整输出日志（复盘用，不进 git）
 e2e/logs/
+.vercel

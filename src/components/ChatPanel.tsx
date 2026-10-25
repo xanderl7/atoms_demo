@@ -54,36 +54,43 @@ export default function ChatPanel({ messages, busy, elapsed, onSend, onStop }: P
     <div className="chat">
       <div className="msgs" ref={scrollRef} onScroll={onScroll}>
         {messages.map((m, i) => (
-          <div key={m.id}>
-            <div className={`bubble ${m.role}`}>{m.content}</div>
+          <div key={m.id} className={`row ${m.role}`}>
+            <div className="avatar" aria-hidden="true">
+              {m.role === 'assistant' ? 'AI' : '我'}
+            </div>
+            <div className="col">
+              <div className={`bubble ${m.role}`}>{m.content}</div>
 
-            {m.steps && (
-              <div className="steps">
-                {m.steps.map((s) => (
-                  <div key={s.id} className={`step ${s.status}`}>
-                    <span className="dot" />
-                    {s.label}
-                  </div>
-                ))}
-              </div>
-            )}
+              {m.steps && (
+                <div className="steps">
+                  {m.steps.map((s) => (
+                    <div key={s.id} className={`step ${s.status}`}>
+                      <span className="dot" />
+                      {s.label}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {/* Human-in-the-loop：选项直接可点，不用手打 */}
-            {m.options && m.options.length > 0 && !busy && i === lastAssistantIdx && (
-              <div className="options">
-                {m.options.map((o) => (
-                  <button key={o} className="opt" onClick={() => pick(o)}>
-                    {o}
-                  </button>
-                ))}
-              </div>
-            )}
+              {/* Human-in-the-loop：选项直接可点，不用手打 */}
+              {m.options && m.options.length > 0 && !busy && i === lastAssistantIdx && (
+                <div className="options">
+                  {m.options.map((o) => (
+                    <button key={o} className="opt" onClick={() => pick(o)}>
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ))}
 
         {busy && (
-          <div className="step running">
-            <span className="dot" />
+          <div className="step running waiting">
+            <svg className="hourglass" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 3h12M6 21h12M6 3c0 4.5 4.5 6 6 9-1.5 3-6 4.5-6 9M18 3c0 4.5-4.5 6-6 9 1.5 3 6 4.5 6 9" />
+            </svg>
             已等待 {elapsed}s{elapsed > 15 ? '（生成较慢，通常 20-40s）' : ''}
           </div>
         )}

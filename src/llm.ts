@@ -7,7 +7,13 @@ const urlOf = (cfg: LLMConfig) => `${cfg.baseURL.replace(/\/$/, '')}/chat/comple
 
 const headersOf = (cfg: LLMConfig) => ({
   'Content-Type': 'application/json',
+  // Authorization 照发（baseURL 直连智谱时靠它）。
+  // 但线上部署时平台的边缘代理会把 Authorization 剥掉/改写，智谱收到
+  // 无效令牌报 401（实测）。所以同时发一个自定义头 X-Zhipu-Auth 穿透
+  // 边缘 —— vite 代理（vite.config.ts 的 onProxyReq）在转发前把它
+  // 补回 Authorization。自定义头边缘不动，直连时多一个头也无害。
   Authorization: `Bearer ${cfg.apiKey}`,
+  'X-Zhipu-Auth': `Bearer ${cfg.apiKey}`,
 })
 
 /**

@@ -4,8 +4,19 @@ import PreviewPane from './components/PreviewPane'
 import CodePane from './components/CodePane'
 import Settings from './components/Settings'
 import LogPanel from './components/LogPanel'
+import AuthModal from './components/AuthModal'
+import { loadAuth, saveAuth, clearAuth, type AuthUser } from './auth'
 import type { AppVersion, Message, Step } from './types'
-import { loadConfig, saveConfig, type LLMConfig } from './config'
+import {
+  loadConfig,
+  saveConfig,
+  builtinKeyState,
+  loadSession,
+  saveSession,
+  clearSession,
+  type LLMConfig,
+  type SessionState,
+} from './config'
 import { chat, chatStream } from './llm'
 import {
   parseRouter,
@@ -30,6 +41,7 @@ import { describeLimits, renderLimits } from './limits'
 import { detectUnsupported, renderUnsupported } from './unsupported'
 import { detectRefuse, renderRefuse } from './refuse'
 import { useAutoFix } from './useAutoFix'
+import { useBuiltinKey } from './useBuiltinKey'
 import { isRollback, resolveVersionRef, buildVersionSummary, isRebuild, isDriftComplaint } from './versionRef'
 import {
   SKIP_CLARIFY_WORDS,
@@ -39,6 +51,16 @@ import {
 } from './clarify'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
+
+/** 初始欢迎语。重建会话（重新开始）时复用，给一条新的 assistant 消息 */
+const makeWelcome = (): Message => ({
+  id: uid(),
+  role: 'assistant',
+  content: '你好，描述一个你想要的应用，我来帮你把它做出来。',
+})
+
+/** 会话恢复：刷新页面时从 localStorage 读回上一次的对话 / 代码 / 预览 */
+const bootSession: SessionState | null = loadSession()
 
 const STEP_LABELS = [
   { id: 'route', label: '理解需求' },
@@ -53,15 +75,25 @@ const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'Abort
 
 export default function App() {
   const [cfg, setCfg] = useState<LLMConfig>(loadConfig)
+  // 开箱即用：没有 Key 时自动向 dev server 索取内置体验 Key（.env 预置）。
+  // 静态部署没有 /api/builtin-key 端点 → 静默失败 → 设置面板引导填自己的 Key。
+  useBuiltinKey(cfg, setCfg)
+  /** 内置体验 Key 的展示状态 —— 只做文案提示，到期不拦截 */
+  const kbState = builtinKeyState(cfg)
   const [showSettings, setShowSettings] = useState(false)
   const [showLog, setShowLog] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([
-    { id: uid(), role: 'assistant', content: '你好，描述一个你想要的应用，我来帮你把它做出来。' },
-  ])
-  const [versions, setVersions] = useState<AppVersion[]>([])
-  const [currentIdx, setCurrentIdx] = useState(-1)
-  const [view, setView] = useState<'preview' | 'code'>('preview')
+  const [messages, setMessages] = useState<Message[]>(
+    bootSession?.messages ?? [makeWelcome()]
+  )
+  const [versions, setVersions] = useState<AppVersion[]>(bootSession?.versions ?? [])
+  const [currentIdx, setCurrentIdx] = useState(bootSession?.currentIdx ?? -1)
+  const [view, setView] = useState<'preview' | 'code'>(bootSession?.view ?? 'preview')
   const [reloadKey, setReloadKey] = useState(0)
+  /** 重新开始确认弹窗 */
+  const [confirmReset, setConfirmReset] = useState(false)
+  /** 登录态 + 注册/登录弹窗 */
+  const [authUser, setAuthUser] = useState<AuthUser | null>(loadAuth)
+  const [showAuth, setShowAuth] = useState(false)
   const [busy, setBusy] = useState(false)
   const [elapsed, setElapsed] = useState(0)
 
@@ -96,6 +128,12 @@ export default function App() {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000)
     return () => clearInterval(t)
   }, [busy])
+
+  // 会话持久化：对话 / 版本 / 当前版本 / 视图一变就落盘，
+  // 刷新页面后从 localStorage 恢复，不丢进度。
+  useEffect(() => {
+    saveSession({ messages, versions, currentIdx, view })
+  }, [messages, versions, currentIdx, view])
 
   const current = versions[currentIdx]
 
@@ -158,6 +196,24 @@ export default function App() {
   function stop() {
     abortRef.current?.abort()
     abortRef.current = null
+  }
+
+  /** 重新开始制作网页：清空会话、恢复初始态。先弹确认窗，确认后才执行 */
+  function restartAll() {
+    stop()
+    clearSession()
+    setMessages([makeWelcome()])
+    setVersions([])
+    setCurrentIdx(-1)
+    setView('preview')
+    setReloadKey((k) => k + 1)
+    setClarifyRounds(0)
+    setClarifyHistory([])
+    pendingRef.current = null
+    identityAskedRef.current = false
+    genMsgRef.current = null
+    setBusy(false)
+    setConfirmReset(false)
   }
 
   async function handleSend(text: string, fromOption = false) {
@@ -419,7 +475,13 @@ export default function App() {
       // 第一个问题后就不再问了 —— 用户说"作品集展示页"（还是很宽泛），
       // 系统就直接开干，编了一堆假作品。现在允许接着追问。
       // 但最多问 3 轮，不然就成了问卷。
-      if (r.intent === 'clarify' && !current && clarifyRounds < 3 && !fromOption) {
+      //
+      // 注意：不再要求 !current —— 之前写成「!current」意味着"已有页面时
+      // 模型返回 clarify 就跳过守卫直接生成"，这就是"边问边生成"的老问题
+      // 复发根因之一。澄清意图本身就是"别生成、先问"，不管当前有没有页面都该停下。
+      // 已生成页面 + 明确迭代指令（如"把主色调改成绿色"）走的是 patch/build，
+      // 不会命中这里，所以放开 !current 不会让正常迭代变成反复追问。
+      if (r.intent === 'clarify' && clarifyRounds < 3 && !fromOption) {
         pendingRef.current = text
         setClarifyRounds((n) => n + 1)
         const opts = [...(r.options ?? []), '就按你默认的来']
@@ -440,23 +502,37 @@ export default function App() {
 
       // ---- Step 2: 拆需求 ----
       setStep(botId, 'plan', 'running')
-      const plan = r.plan || (r.reply ? `- ${r.reply}` : '')
+      let plan = r.plan || (r.reply ? `- ${r.reply}` : '')
       setStep(botId, 'plan', 'done')
 
-      // ── plan 是反问 → 停下来问，绝不生成 ────────────────────
+      // ── plan 是反问 → 停下来问，绝不生成（非选项场景）────────────
       // 模型经常把"你主要想用后端来做什么？"这种反问写进 plan 字段，
       // 然后系统就照着这句反问去生成代码了 —— 用户看到的是
       // "一边问我、一边已经把东西做出来了"。
       //
-      // fromOption 时除外：用户点了选项就是已经作答，这轮必须出东西。
-      if (planIsQuestion(plan) && !fromOption) {
-        const opts = ['你定就行，按默认的来', '我再补充说明']
-        pendingRef.current = text
-        setClarifyHistory((h) => [...h, { q: plan, a: text }])
-        log.info('clarify', 'plan 里是反问，改为先问清楚', { plan: plan.slice(0, 120) })
-        patchMsg(botId, { content: plan, steps: doneSteps(['route']), options: opts })
-        setBusy(false)
-        return
+      // 这是请求 5 的硬兜底：plan 是反问就【绝不】生成，把问题抛回去问清楚。
+      //
+      // 唯一例外：用户【点了选项】作答（fromOption）。设计硬规则是
+      // "点了选项必须直接出东西、不许再追问"（见上方注释），所以这里不能把
+      // 模型的追问当 plan 展示出来又卡住生成 —— 那等于"你答完我再问一遍"。
+      // 这种情况直接用选项原文（enriched，已合并原需求）作为生成指令，
+      // 丢弃模型的反问。点击"就按你默认的来"这类放行选项时模型本就返回
+      // build/patch 意图、plan 不是反问，正常放行同样不受影响。
+      if (planIsQuestion(plan)) {
+        if (fromOption) {
+          plan = enriched
+          log.info('clarify', '选项点击后模型仍写了反问，按选项内容直接生成', {
+            option: enriched.slice(0, 80),
+          })
+        } else {
+          const opts = ['你定就行，按默认的来', '我再补充说明']
+          pendingRef.current = text
+          setClarifyHistory((h) => [...h, { q: plan, a: text }])
+          log.info('clarify', 'plan 里是反问，改为先问清楚', { plan: plan.slice(0, 120) })
+          patchMsg(botId, { content: plan, steps: doneSteps(['route']), options: opts })
+          setBusy(false)
+          return
+        }
       }
 
       patchMsg(botId, { content: plan })
@@ -640,15 +716,48 @@ export default function App() {
             代码
           </button>
         </div>
+        <button className="icon-btn danger" onClick={() => setConfirmReset(true)} title="清空当前会话，重新开始制作网页">
+          重新开始
+        </button>
         <button className="icon-btn" onClick={() => setReloadKey((k) => k + 1)}>
           刷新
         </button>
         <button className="icon-btn" onClick={() => setShowLog(true)}>
           日志
         </button>
+        {kbState.active && (
+          <button
+            className="key-chip"
+            onClick={() => setShowSettings(true)}
+            title="正在使用内置体验 Key，仅供体验、有效期 7 天。点击查看详情，或随时换成你自己的 Key。"
+          >
+            体验 Key · 7 天
+          </button>
+        )}
         <button className="icon-btn" onClick={() => setShowSettings(true)} title="模型设置">
           ⚙︎
         </button>
+        {authUser ? (
+          <>
+            <span className="user-chip" title="已登录">
+              👤 {authUser.username}
+            </span>
+            <button
+              className="icon-btn"
+              onClick={() => {
+                clearAuth()
+                setAuthUser(null)
+              }}
+              title="退出登录"
+            >
+              退出
+            </button>
+          </>
+        ) : (
+          <button className="icon-btn" onClick={() => setShowAuth(true)}>
+            登录 / 注册
+          </button>
+        )}
       </div>
 
       <div className="main">
@@ -717,6 +826,34 @@ export default function App() {
         />
       )}
       {showLog && <LogPanel onClose={() => setShowLog(false)} />}
+      {showAuth && (
+        <AuthModal
+          onClose={() => setShowAuth(false)}
+          onAuthed={(username) => {
+            saveAuth({ username })
+            setAuthUser({ username })
+          }}
+        />
+      )}
+      {confirmReset && (
+        <div className="mask" onClick={() => setConfirmReset(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>重新开始制作网页</h3>
+            <p className="hint">
+              这会清空当前所有对话、已生成的代码和预览效果，且无法撤销。确定要重新开始吗？
+            </p>
+            <div className="modal-actions">
+              <div className="spacer" />
+              <button className="icon-btn" onClick={() => setConfirmReset(false)}>
+                取消
+              </button>
+              <button className="send danger" onClick={restartAll}>
+                确定，清空
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,0 +1,4 @@
+# 不上传 .env：Vercel 的环境变量走项目设置（dashboard / vercel env add），
+# 仓库里的 .env 只服务本地 dev。传上去既是无用文件，也把 Key 落进部署产物。
+.env
+.env.local
